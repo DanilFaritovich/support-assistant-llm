@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Service Desk",
+    "description": "Handles general support requests, initial diagnostics, and tickets that do not clearly belong to a specialist team."
+  },
+  {
+    "name": "Workplace & Devices",
+    "description": "Supports employee laptops, desktop operating systems, peripherals, printers, and workplace software."
+  },
+  {
+    "name": "Identity & Access",
+    "description": "Handles sign-in failures, account lifecycle, multi-factor authentication, permissions, and access requests."
+  },
+  {
+    "name": "Business Applications",
+    "description": "Supports errors and user-facing behavior in internal business web and mobile applications."
+  },
+  {
+    "name": "Cloud & Platform",
+    "description": "Handles deployment, container, network, runtime availability, and shared platform incidents."
+  },
+  {
+    "name": "Data Services",
+    "description": "Handles database availability, data pipelines, reporting infrastructure, and data consistency incidents."
+  }
+]
