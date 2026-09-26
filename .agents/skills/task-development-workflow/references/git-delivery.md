@@ -50,6 +50,20 @@ Never include:
 
 Create a clear commit and push only the task branch.
 
+## Push authentication failures
+
+If `git push` fails because authentication or credentials are unavailable:
+
+- do not retry the same push repeatedly;
+- do not automatically switch the remote between HTTPS and SSH;
+- do not start a new interactive login unless the user explicitly requests it;
+- preserve the local branch and commit;
+- report the credential/environment failure clearly and stop the delivery step.
+
+A credential failure does not invalidate the completed local implementation or commit.
+
+After credentials are fixed by the developer or environment, retry the push once from the same branch.
+
 ## Pull Request and CI
 
 Normal flow:

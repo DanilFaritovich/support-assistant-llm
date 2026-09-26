@@ -50,7 +50,7 @@ For the first installation:
 2. select the applicable profile or individual skills;
 3. read only the selected core `SKILL.md` files;
 4. install each selected skill package locally, including its colocated `references/` files when present;
-5. when tooling supports copying/materializing reference files without rendering their contents, use that path; otherwise fetch each reference once for installation but do not analyze/reread it unless the current project adaptation requires that topic;
+5. transfer reference assets without rendering their contents into model context whenever the available tooling supports direct copy/materialization; otherwise fetch each required reference once for installation and do not analyze/reread it unless the current project adaptation requires that topic;
 6. record the exact upstream commit SHA in the lock file;
 7. record the installed profile and skill names.
 
@@ -73,21 +73,66 @@ A second fetch is justified only when:
 
 Do not spend network/tool calls proving that a successfully fetched skill still contains the same text later in the same run.
 
+## Reference transfer without model context
+
+Reference files that do not require semantic adaptation are package assets, not default reasoning context.
+
+Preferred flow:
+
+```text
+changed paths
+-> transfer changed reference assets directly
+-> keep their contents out of model context
+-> read a reference only when its topic is required
+```
+
+When the available tool can copy, materialize, download, or otherwise transfer a reference file without returning its text to the model, prefer that mechanism over a content-returning fetch.
+
+If no such transfer is available:
+
+1. fetch each required reference at most once;
+2. write/install it immediately;
+3. do not summarize, inspect, compare, or reread it unless its topic is required for project adaptation.
+
+Do not load a reference merely to prove that it was installed.
+
+## Safe write fallback
+
+If the normal patch/write mechanism cannot modify an installed skill directory because of sandbox, mount, or permission restrictions:
+
+1. do not change filesystem permissions, ownership, or mount configuration;
+2. do not use `sudo`, privilege escalation, or another privileged write path to bypass the failure;
+3. do not refetch upstream content that was already obtained;
+4. do not delete an existing `SKILL.md` before its replacement is ready to be written;
+5. prepare the complete replacement before mutating the existing installed file;
+6. prefer one non-privileged permitted atomic or single-step replacement mechanism when available;
+7. if a normal non-privileged write attempt fails with an OS-level `Permission denied` caused by ownership/permissions, stop instead of probing privileged alternatives;
+8. if a multi-step non-privileged fallback is unavoidable, preserve a valid existing skill until the replacement can be written successfully;
+9. if no permitted non-privileged write mechanism exists, stop the synchronization and report the exact blocked paths.
+
+Never use a delete-first replacement that can leave the project without a valid installed skill after a later write failure.
+
+Filesystem ownership/permission repair is a developer/environment responsibility, not part of standards synchronization. Report the blocked path and leave permission repair to the developer.
+
 ## Update workflow
 
 When a lock file already exists:
 
 1. read the local lock file first;
 2. resolve the current upstream target ref/commit;
-3. if the upstream commit equals the locked `source.ref`, stop: standards are already current;
-4. compare the locked upstream commit with the new upstream commit;
+3. if the upstream commit equals the locked `source.ref`:
+   - inspect only the target project's pending changes under `.agents/skills/` and `.codex-standards.lock.yaml`;
+   - if there are no pending standards-sync changes, stop: standards are already current;
+   - if pending standards changes are consistent with an incomplete synchronization/delivery, do not refetch upstream and resume local validation, staging, commit, push, and PR/CI delivery as applicable;
+   - if the pending standards changes are unrelated or ambiguous, report the conflict instead of overwriting them;
+4. otherwise compare the locked upstream commit with the new upstream commit;
 5. inspect the changed-file list before fetching skill contents;
 6. fetch only:
    - `catalog.yaml` when it changed;
    - the active profile when it changed;
    - changed files inside installed skill packages, including changed `references/`;
    - newly applicable skill packages introduced by the updated profile;
-7. install changed reference files locally with the least-context transfer supported by the available tooling; do not analyze/reread their contents unless their topic is required for project adaptation;
+7. install changed reference files locally using direct context-free transfer when supported; otherwise fetch each required reference once without semantic analysis unless its topic is required;
 8. do not fetch unchanged installed skill files;
 9. do not fetch unrelated skills;
 10. preserve compatible project-specific adaptations;
@@ -95,7 +140,7 @@ When a lock file already exists:
 
 A repository compare operation or changed-file list is preferred over opening every upstream file.
 
-If the locked commit equals the resolved upstream commit, stop the standards synchronization immediately. Do not fetch catalog/profile/skills only to reconfirm an unchanged revision.
+When the locked commit equals the resolved upstream commit, do not fetch catalog/profile/skills merely to reconfirm an unchanged revision. First distinguish a clean completed sync from pending local standards work, then either stop or resume delivery without restarting upstream synchronization.
 
 ## Profile changes
 
@@ -164,7 +209,31 @@ When an authenticated GitHub connector/integration is available, prefer it for:
 - comparing revisions;
 - fetching catalog/profile/skill files.
 
-Do not verify the same upstream state independently through web search, `git ls-remote`, and the GitHub connector unless the primary mechanism failed or produced ambiguous results.
+Once an authoritative upstream channel has been selected, keep all upstream inspection on that channel for the rest of the synchronization.
+
+When the GitHub connector is selected:
+
+- use connector compare results as the source of truth for changed upstream paths;
+- fetch changed upstream files through the connector;
+- do not run local `git diff`, `git fetch`, `git ls-remote`, or equivalent Git commands to inspect the upstream standards commits;
+- do not depend on local availability of upstream Git objects;
+- do not trigger promisor/partial-clone object fetching merely to inspect upstream standards history.
+
+Local Git is reserved for the target project's own working tree, index, branches, commits, and final delivery operations.
+
+Preferred boundary:
+
+```text
+upstream standards:
+GitHub connector compare/fetch
+
+target project:
+local git status/diff/add/commit/push
+```
+
+Do not verify the same upstream state independently through web search, local Git, and the GitHub connector unless the selected upstream mechanism failed or produced ambiguous results.
+
+If a local Git command unexpectedly tries to fetch an upstream/promisor object during standards inspection, stop that path and continue from the already selected authoritative upstream source instead of retrying the network-dependent command.
 
 ## Efficient upstream access
 
