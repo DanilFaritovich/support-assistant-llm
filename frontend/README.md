@@ -58,13 +58,17 @@ Open <http://127.0.0.1:5173>.
 ## Quality commands
 
 ```bash
-npm run lint          # ESLint
-npm run format:check  # Prettier verification
-npm run typecheck     # vue-tsc
-npm run test          # Vitest, one run
-npm run test:watch    # Vitest watch mode
-npm run build         # typecheck and production Vite build
-npm run check         # lint + format + typecheck + tests
+make install       # npm ci
+make lint          # npm run lint
+make format-check  # npm run format:check
+make typecheck     # npm run typecheck
+make test          # npm run test
+make check         # npm run check
+make build         # npm run build
+make all           # check + production build
 ```
+
+The Makefile is a thin wrapper around the scripts in `package.json`; npm remains
+the source of the frontend quality-tool configuration.
 
 The component suite covers demo loading, routing review, confirmation, manual override, final API payloads, reset behavior, and error recovery. API-client tests mock `fetch`; no external service is contacted.

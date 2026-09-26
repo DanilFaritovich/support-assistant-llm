@@ -125,7 +125,14 @@ Copy `.env.example` to `.env` for a direct backend run, or use the root `.env` w
 | `OPENROUTER_TIMEOUT_SECONDS` | `60` | Must be between 1 and 180 |
 | `OPENROUTER_MAX_RETRIES` | `2` | Must be between 0 and 3 |
 | `OPENROUTER_SITE_URL` | none | Optional OpenRouter attribution header |
+| `LLM_RATE_LIMIT_PER_MINUTE` | `10` | Shared per-IP LLM operation limit over 60 seconds |
+| `LLM_RATE_LIMIT_PER_DAY` | `20` | Shared per-IP LLM operation limit over 24 hours |
 | `DATABASE_URL` | local SQLite | Any async SQLAlchemy URL supported by installed drivers |
+
+The two ticket endpoints share an in-memory rate limiter. Its state resets when
+the process restarts and is not shared across workers or backend instances.
+Behind a reverse proxy, set Uvicorn's `FORWARDED_ALLOW_IPS` environment variable
+to exact trusted proxy IPs/CIDRs and never to `*`.
 
 ## Local run
 
@@ -141,11 +148,6 @@ cp .env.example .env
 ## Testing and quality
 
 ```bash
-.venv/bin/python -m ruff check .
-.venv/bin/python -m ruff format --check .
-.venv/bin/python -m mypy app
-.venv/bin/python -m pytest -v
-# or all checks
 make check PYTHON=.venv/bin/python
 ```
 
