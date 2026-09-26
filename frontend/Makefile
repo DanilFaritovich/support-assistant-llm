@@ -1,9 +1,13 @@
-.PHONY: all install lint format-check typecheck test-unit test build check
+.PHONY: all install fix lint format-check typecheck test-unit test build check
 
 all: check build
 
 install:
 	@npm ci
+
+fix:
+	@npm run lint:fix
+	@npm run format
 
 lint:
 	@npm run lint

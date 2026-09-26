@@ -20,6 +20,8 @@ Support Assistant — публичное демонстрационное при
 - Идемпотентная инициализация шести демонстрационных департаментов.
 - OpenRouter с ограничением на `openrouter/free` и модели с суффиксом `:free`.
 - Structured outputs по JSON Schema, проверка Pydantic, таймауты, повторы и безопасные ошибки API.
+- Общие rolling quota в Redis для LLM-операций и anti-flood API на Nginx.
+- Коррелированные JSON-логи приложения, пригодные для внешней отправки в Loki.
 - Адаптивный интерфейс Vue, FastAPI, SQLite, миграции и healthcheck.
 - Единый Docker Compose; наружу на localhost опубликован только frontend.
 
@@ -44,7 +46,7 @@ Support Assistant — публичное демонстрационное при
 | Frontend | Vue 3, TypeScript, Vite, Vitest, Vue Test Utils, ESLint, Prettier |
 | Backend | Python 3.14, FastAPI, Pydantic, асинхронный SQLAlchemy, Alembic, OpenAI-совместимый SDK |
 | LLM | Маршрутизатор бесплатных моделей OpenRouter, structured outputs по JSON Schema |
-| Хранение | SQLite в постоянном Docker volume |
+| Хранение | SQLite в постоянном Docker volume; временное quota-состояние в Redis |
 | Запуск | Docker Compose, Nginx, healthcheck контейнеров |
 
 ## Архитектура
@@ -54,10 +56,14 @@ Support Assistant — публичное демонстрационное при
 ```text
 Браузер -> Nginx/Vue -> FastAPI -> прикладные сервисы
                                |-> репозиторий -> SQLite
-                               `-> LLM-порты -> бесплатные модели OpenRouter
+                               |-> LLM-порты -> бесплатные модели OpenRouter
+                               `-> quota-порт -> Redis
 ```
 
-Именованную сеть `support-assistant-network` впоследствии можно подключить к внешнему reverse proxy. Интеграция с ProjectRouter и Caddy пока не реализована.
+Nginx применяет общий IP anti-flood и ограничение тела запроса 16 КиБ для
+`/api/`. Отдельная общая LLM quota хранится в Redis. Именованную сеть
+`support-assistant-network` впоследствии можно подключить к внешнему reverse
+proxy. Интеграция с ProjectRouter и Caddy пока не реализована.
 
 ## Запуск через Docker Compose
 
@@ -82,7 +88,10 @@ curl http://127.0.0.1:8080/api/health
 docker compose down
 ```
 
-Backend не публикует отдельный порт хоста. SQLite хранится в именованном volume `support-assistant-data`. Миграции выполняются перед запуском API, а отсутствующие демонстрационные департаменты добавляются без дубликатов.
+Backend и Redis не публикуют порты хоста. SQLite хранится в именованном volume
+`support-assistant-data`; quota-счётчики Redis намеренно не сохраняются.
+Миграции выполняются перед запуском API, а отсутствующие демонстрационные
+департаменты добавляются без дубликатов.
 
 ## Конфигурация
 
@@ -95,15 +104,26 @@ Backend не публикует отдельный порт хоста. SQLite �
 | `OPENROUTER_SITE_URL` | Нет | пусто | Необязательный URL проекта для атрибуции OpenRouter |
 | `LLM_RATE_LIMIT_PER_MINUTE` | Нет | `10` | Общий IP-лимит двух LLM-endpoint'ов за 60 секунд |
 | `LLM_RATE_LIMIT_PER_DAY` | Нет | `20` | Общий IP-лимит двух LLM-endpoint'ов за 24 часа |
+| `REDIS_URL` | Нет | `redis://localhost:6379/0` | Backend-only хранилище общей quota; Compose задаёт внутренний URL |
+| `LOG_LEVEL` | Нет | `INFO` | Уровень логирования backend |
+| `LOG_FORMAT` | Нет | `json` | `json` для structured output или `text` для локального запуска |
+| `SERVICE_NAME` | Нет | `support-assistant-backend` | Поле service в structured logs |
+| `ENVIRONMENT` | Нет | `development` | Поле environment в structured logs |
 | `FORWARDED_ALLOW_IPS` | Нет | только loopback | Точные доверенные IP/CIDR reverse proxy для Uvicorn |
 | `DATABASE_URL` | Нет | задаётся Compose | URL SQLAlchemy для запуска без Compose |
 
 Не добавляйте настоящий ключ в отслеживаемые Git-файлы. Ключ не попадает в frontend bundle.
 
-Состояние rate limiter хранится в одном процессе backend и сбрасывается после
-перезапуска. Оно не разделяется между несколькими workers или backend-инстансами.
-Для публичного деплоя укажите в `FORWARDED_ALLOW_IPS` точные адреса или сети
-Nginx/Caddy, чтобы Uvicorn безопасно определял IP клиента; не используйте `*`.
+Два LLM-endpoint'а используют общие атомарные rolling quota Redis для всех
+workers и backend-инстансов. Persistence Redis отключён, поскольку счётчики не
+являются бизнес-данными. Для публичного деплоя укажите в
+`FORWARDED_ALLOW_IPS` точные адреса или сети Nginx/Caddy, чтобы Uvicorn
+безопасно определял IP клиента; не используйте `*`. Если перед Nginx появится
+ещё один proxy, сначала настройте доверенную обработку real IP в Nginx.
+
+Backend пишет JSON Lines в stdout и добавляет сгенерированный request ID,
+который также возвращается в `X-Request-ID`. Сбор логов (например, в Loki
+через Grafana Alloy) остаётся задачей deployment и не добавляется в Compose.
 
 ## API
 
@@ -125,6 +145,7 @@ Nginx/Caddy, чтобы Uvicorn безопасно определял IP кли�
 
 | Команда | Назначение |
 | --- | --- |
+| `make fix` | Безопасные автоисправления lint и форматирования backend/frontend |
 | `make check` | Быстрые lint, format, type и unit-проверки backend/frontend |
 | `make verify` | Integration/E2E-тесты backend и production build frontend |
 | `make test` | Все существующие тесты backend и frontend |
@@ -133,8 +154,9 @@ Nginx/Caddy, чтобы Uvicorn безопасно определял IP кли�
 | `make docker-check` | Сборка, запуск, health/smoke-check и cleanup Compose |
 | `make ci` | Полный путь `check + verify + docker-check` для GitHub Actions |
 
-В обычном цикле разработки используйте `make check`. Если изменения затрагивают
-интеграцию, E2E-сценарии, сборку или CI, после него выполните `make verify`.
+Перед read-only проверками выполняйте `make fix`, затем в обычном цикле
+разработки используйте `make check`. Если изменения затрагивают интеграцию,
+E2E-сценарии, сборку или CI, после него выполните `make verify`.
 Более тяжёлый `make ci` предназначен прежде всего для GitHub Actions.
 
 Backend:
@@ -155,7 +177,9 @@ make check
 make build
 ```
 
-Автоматические тесты используют моки и локальные транспорты и не обращаются к OpenRouter.
+Автоматические тесты используют моки и локальные транспорты и не обращаются к
+OpenRouter. Redis integration tests используют `TEST_REDIS_URL`; GitHub
+Actions автоматически предоставляет изолированный Redis service.
 
 GitHub Actions выполняет полный CI для Pull Request и push в `develop` и
 `main`. Новая работа начинается от `develop` в task-ветке и возвращается

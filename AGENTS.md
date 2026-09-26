@@ -8,23 +8,30 @@ reviews the proposed department. The OpenRouter key and all LLM calls stay in
 the backend.
 
 Stack: Python 3.14, FastAPI, Pydantic, async SQLAlchemy, Alembic, SQLite,
-Vue 3, TypeScript, Vite, Vitest, Nginx, and Docker Compose.
+Redis, Vue 3, TypeScript, Vite, Vitest, Nginx, and Docker Compose.
+
+The project follows the `fastapi-vue-clean` v5 profile from
+[codex-development-standards](https://github.com/DanilFaritovich/codex-development-standards).
+For standards updates, read `.codex-standards.lock.yaml` first and use the
+project-local `standards-sync` skill. Read `catalog.yaml` first only during an
+initial installation, and load only changed or newly applicable skills.
 
 ## Repository map
 
 - `backend/app/api`: HTTP routes, request/response schemas, and dependencies.
 - `backend/app/services`: application use cases and business rules.
 - `backend/app/ports`: protocols owned by the application layer.
-- `backend/app/connectors`: OpenRouter adapters.
+- `backend/app/connectors`: OpenRouter and Redis quota adapters.
 - `backend/app/repositories`, `backend/app/db`: persistence adapters and
   SQLAlchemy infrastructure.
 - `backend/app/core`, `backend/app/schemas`, `backend/app/prompts`:
-  settings, validated models, and prompt loading.
+  settings, centralized logging, validated models, and prompt loading.
 - `backend/migrations`, `backend/resources`: schema migrations and
   repository-owned runtime resources.
 - `backend/tests/{unit,integration,e2e}`: backend tests by scope.
 - `frontend/src`: Vue application, API client, types, demo data, and tests.
 - `.github/workflows`: CI entry points; project commands remain in Makefiles.
+- `.agents/skills`: locked project-local development standards used by Codex.
 
 Main entry points are `backend/app/main.py`, `backend/app/composition.py`,
 `frontend/src/main.ts`, and `frontend/src/App.vue`.
@@ -44,6 +51,12 @@ external integrations, or deployment architecture.
   explanations in English. Comment constraints and reasons, not obvious code.
 - Never commit credentials. `OPENROUTER_API_KEY` is backend-only; tracked
   environment examples contain placeholders only.
+- Keep production LLM quota state in Redis through the application quota port.
+  Process-local limiters are test/local doubles only.
+- Keep generic public API anti-flood and request-body limits at Nginx. Derive
+  application quota identity only through explicitly trusted proxy handling.
+- Emit backend logs through the centralized configuration. Never log request
+  bodies, credentials, API keys, authorization headers, or cookies.
 - New business behavior requires meaningful tests. For a bug fix, prefer a
   regression test that fails before the fix, then run its narrow scope.
 - Keep fixtures at the narrowest useful scope: test module first, local
@@ -59,7 +72,8 @@ Makefiles are the stable project interface. Keep backend implementation in
 `backend/Makefile`; keep frontend tool configuration in `package.json` and
 make `frontend/Makefile` a thin wrapper. The root Makefile only orchestrates.
 
-- `make check`: fast local checks (lint, formatting, typing, unit tests).
+- `make fix`: safe backend/frontend lint and formatting auto-fixes.
+- `make check`: fast read-only checks (lint, formatting, typing, unit tests).
 - `make verify`: integration/E2E tests and the production frontend build;
   run after `make check` when the change warrants it.
 - `make test`: all current backend and frontend tests.
@@ -75,11 +89,13 @@ repeat a successful backend, frontend, or Docker check after unrelated changes.
 Standard task workflow:
 
 `AGENTS.md` -> define scope -> open only relevant files -> implement -> add
-tests -> targeted validation -> `make check` -> final diff -> update
+tests -> `make fix` -> targeted validation -> `make check` -> final diff -> update
 documentation if needed -> push -> GitHub CI.
 
 Run `make verify` between `make check` and the final diff for changes that
 affect API/database integration, end-to-end behavior, builds, Docker, or CI.
+Redis integration tests run when `TEST_REDIS_URL` is available; GitHub Actions
+provides it through an isolated Redis service.
 
 ## Git and CI
 

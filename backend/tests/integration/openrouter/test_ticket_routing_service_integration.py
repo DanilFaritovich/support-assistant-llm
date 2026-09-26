@@ -1,4 +1,5 @@
 import json
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -27,6 +28,7 @@ class TestTicketRoutingServiceIntegration:
         session: AsyncSession,
         seeded_departments: list[DepartmentORM],
         list_departments: list[Department],
+        llm_quota: MagicMock,
     ) -> None:
         """Route one bug using SQLite and a mocked HTTP LLM endpoint."""
         assert len(seeded_departments) == len(list_departments)
@@ -127,11 +129,13 @@ class TestTicketRoutingServiceIntegration:
 
             routing_service = TicketRoutingService(
                 ticket_routing=routing_connector,
+                llm_quota=llm_quota,
             )
 
             result = await routing_service.route(
                 ticket_text=BUG_REPORT,
                 departments=departments,
+                client_id="192.0.2.1",
             )
 
         assert isinstance(result, TicketRoutingResult)

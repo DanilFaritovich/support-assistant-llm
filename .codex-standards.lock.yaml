@@ -1,0 +1,28 @@
+version: 1
+
+source:
+  repository: https://github.com/DanilFaritovich/codex-development-standards
+  ref: dbdd58cc34572b564e855a0a3681883be31fd15b
+
+profile:
+  name: fastapi-vue-clean
+  version: 5
+
+skills:
+  - task-development-workflow
+  - standards-sync
+  - backend-clean-architecture
+  - python-testing
+  - code-quality
+  - fastapi
+  - api-guardrails
+  - structured-logging
+  - sqlalchemy-alembic
+  - vue
+  - vue-testing
+  - docker
+  - github-actions
+  - documentation
+  - licensing
+
+optional_skills: []

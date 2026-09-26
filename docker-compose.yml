@@ -1,4 +1,19 @@
 services:
+  redis:
+    image: redis:8.8.3-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      default:
+        ipv4_address: 172.30.0.4
+    restart: unless-stopped
+
   backend:
     build:
       context: ./backend
@@ -8,10 +23,18 @@ services:
         required: false
     environment:
       DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
+      REDIS_URL: redis://redis:6379/0
+      FORWARDED_ALLOW_IPS: 172.30.0.3
+    depends_on:
+      redis:
+        condition: service_healthy
     volumes:
       - support-assistant-data:/app/data
     expose:
       - "8000"
+    networks:
+      default:
+        ipv4_address: 172.30.0.2
     healthcheck:
       test:
         [
@@ -35,6 +58,9 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    networks:
+      default:
+        ipv4_address: 172.30.0.3
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
       interval: 15s
@@ -46,6 +72,9 @@ services:
 networks:
   default:
     name: support-assistant-network
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
 
 volumes:
   support-assistant-data:

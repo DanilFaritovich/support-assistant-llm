@@ -20,6 +20,8 @@ Support requests often arrive as free-form text. A support agent must identify t
 - Idempotent initialization of six fictional IT departments.
 - OpenRouter integration restricted to `openrouter/free` and `:free` models.
 - JSON Schema structured output, Pydantic validation, timeouts, retries, and safe API errors.
+- Shared Redis rolling quotas for LLM operations and Nginx API anti-flood.
+- Correlated JSON application logs suitable for external Loki collection.
 - Responsive Vue interface, FastAPI API, SQLite persistence, migrations, and healthchecks.
 - A single Docker Compose entry point with only the frontend bound to localhost.
 
@@ -44,7 +46,7 @@ The screenshot was captured from the Docker Compose deployment and contains demo
 | Frontend | Vue 3, TypeScript, Vite, Vitest, Vue Test Utils, ESLint, Prettier |
 | Backend | Python 3.14, FastAPI, Pydantic, SQLAlchemy async, Alembic, OpenAI-compatible SDK |
 | LLM | OpenRouter free model router, JSON Schema structured outputs |
-| Storage | SQLite with a persistent Docker volume |
+| Storage | SQLite with a persistent Docker volume; ephemeral Redis quota state |
 | Runtime | Docker Compose, Nginx reverse proxy, container healthchecks |
 
 ## Architecture
@@ -54,10 +56,15 @@ The browser calls only relative `/api` endpoints. Nginx serves the compiled SPA 
 ```text
 Browser -> Nginx/Vue -> FastAPI routes -> application services
                                      |-> department repository -> SQLite
-                                     `-> LLM ports -> OpenRouter free models
+                                     |-> LLM ports -> OpenRouter free models
+                                     `-> quota port -> Redis
 ```
 
-The named Compose network (`support-assistant-network`) can later be attached to an external reverse proxy. No ProjectRouter or Caddy integration is included yet.
+Nginx applies a general per-IP anti-flood policy and a 16 KiB request-body
+limit to `/api/`. The application separately enforces the shared LLM quota in
+Redis. The named Compose network (`support-assistant-network`) can later be
+attached to an external reverse proxy. No ProjectRouter or Caddy integration is
+included yet.
 
 ## Run with Docker Compose
 
@@ -82,7 +89,10 @@ Stop containers without deleting stored data:
 docker compose down
 ```
 
-The backend is not published on a host port. SQLite data is retained in the `support-assistant-data` named volume. Migrations run before the API starts, and missing demo departments are added safely without duplicating existing rows.
+The backend and Redis are not published on host ports. SQLite data is retained
+in the `support-assistant-data` named volume; Redis quota counters are
+intentionally ephemeral. Migrations run before the API starts, and missing demo
+departments are added safely without duplicating existing rows.
 
 ## Configuration
 
@@ -95,15 +105,26 @@ The backend is not published on a host port. SQLite data is retained in the `sup
 | `OPENROUTER_SITE_URL` | No | empty | Optional attribution URL sent to OpenRouter |
 | `LLM_RATE_LIMIT_PER_MINUTE` | No | `10` | Shared per-IP limit for the two LLM endpoints over 60 seconds |
 | `LLM_RATE_LIMIT_PER_DAY` | No | `20` | Shared per-IP limit for the two LLM endpoints over 24 hours |
+| `REDIS_URL` | No | `redis://localhost:6379/0` | Backend-only shared quota store; Compose sets the internal service URL |
+| `LOG_LEVEL` | No | `INFO` | Backend log level |
+| `LOG_FORMAT` | No | `json` | `json` for structured output or `text` for local use |
+| `SERVICE_NAME` | No | `support-assistant-backend` | Structured log service field |
+| `ENVIRONMENT` | No | `development` | Structured log environment field |
 | `FORWARDED_ALLOW_IPS` | No | loopback only | Exact trusted reverse-proxy IPs/CIDRs used by Uvicorn |
 | `DATABASE_URL` | No | Compose-managed SQLite URL | SQLAlchemy database URL for non-Compose deployments |
 
 Do not place a real key in any tracked file. The frontend bundle never receives the key.
 
-The rate limiter is stored in one backend process and resets on restart. It is
-not shared by multiple workers or backend instances. In a public deployment,
-set `FORWARDED_ALLOW_IPS` to the exact Nginx/Caddy addresses or networks so
-Uvicorn can safely determine the client IP; never set it to `*`.
+The two LLM endpoints share atomic rolling Redis quotas across backend workers
+and instances. Redis persistence is disabled because these counters are not
+business data. In a public deployment, set `FORWARDED_ALLOW_IPS` to the exact
+Nginx/Caddy addresses or networks so Uvicorn can safely determine the client
+IP; never set it to `*`. If another proxy is placed before Nginx, configure
+Nginx trusted real-IP handling before relying on its edge per-IP limit.
+
+Backend logs are JSON lines on stdout and include a generated request ID. The
+same ID is returned as `X-Request-ID`. Log collection (for example, Loki via
+Grafana Alloy) remains a deployment concern and is not bundled into Compose.
 
 ## API
 
@@ -125,6 +146,7 @@ The root Makefile is the stable project interface:
 
 | Command | Purpose |
 | --- | --- |
+| `make fix` | Apply safe backend/frontend lint and formatting fixes |
 | `make check` | Fast backend/frontend lint, format, type, and unit checks |
 | `make verify` | Backend integration/E2E tests and frontend production build |
 | `make test` | All current backend and frontend tests |
@@ -133,7 +155,8 @@ The root Makefile is the stable project interface:
 | `make docker-check` | Build, start, health-check, smoke-check, and clean up Compose |
 | `make ci` | Full `check + verify + docker-check` path for GitHub Actions |
 
-Use `make check` in the regular development loop. Run `make verify` after it
+Run `make fix` before read-only validation, then use `make check` in the regular
+development loop. Run `make verify` after it
 when a change affects integration, E2E behavior, builds, or CI. The heavier
 `make ci` target is intended primarily for GitHub Actions.
 
@@ -155,7 +178,9 @@ make check
 make build
 ```
 
-Automated tests use mocks and local transports; they never make real OpenRouter requests.
+Automated tests use mocks and local transports; they never make real OpenRouter
+requests. Redis integration tests use `TEST_REDIS_URL`; GitHub Actions provides
+an isolated Redis service automatically.
 
 GitHub Actions runs the full CI target for Pull Requests and pushes to
 `develop` and `main`. New work starts from `develop` in a task branch and

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.exceptions import DepartmentNotFoundError
+from app.exceptions import DepartmentNotFoundError, LLMQuotaExceededError
 from app.schemas.department import Department
 from app.schemas.ticket_draft import TicketDraft
 from app.services.department_service import DepartmentService
@@ -31,13 +31,14 @@ class Dependencies:
     service: TicketProcessingService
     department_service: MagicMock
     drafting_service: MagicMock
+    llm_quota: MagicMock
     selected_department: Department
     draft_result: TicketDraft
 
 
 class TestTicketProcessingService:
     @pytest.fixture
-    def dependencies(self) -> Dependencies:
+    def dependencies(self, llm_quota: MagicMock) -> Dependencies:
         """Create the application service with mocked dependencies."""
         selected_department = Department(
             id=2,
@@ -62,12 +63,14 @@ class TestTicketProcessingService:
         service = TicketProcessingService(
             department_service=department_service,
             ticket_drafting_service=drafting_service,
+            llm_quota=llm_quota,
         )
 
         return Dependencies(
             service=service,
             department_service=department_service,
             drafting_service=drafting_service,
+            llm_quota=llm_quota,
             selected_department=selected_department,
             draft_result=draft_result,
         )
@@ -82,11 +85,13 @@ class TestTicketProcessingService:
             ticket_text=BUG_REPORT,
             department_id=dependencies.selected_department.id,
             template=DESCRIPTION_TEMPLATE,
+            client_id="192.0.2.1",
         )
 
         assert isinstance(result, TicketDraft)
         assert result == dependencies.draft_result
         assert result.description == EXPECTED_DESCRIPTION
+        dependencies.llm_quota.consume.assert_awaited_once_with("192.0.2.1")
 
         dependencies.department_service.get_by_id.assert_awaited_once_with(
             dependencies.selected_department.id,
@@ -97,6 +102,26 @@ class TestTicketProcessingService:
             department=dependencies.selected_department,
             template=DESCRIPTION_TEMPLATE,
         )
+
+    @pytest.mark.asyncio
+    async def test_process_stops_before_drafting_when_quota_is_exhausted(
+        self,
+        dependencies: Dependencies,
+    ) -> None:
+        dependencies.llm_quota.consume.side_effect = LLMQuotaExceededError(
+            retry_after=60
+        )
+
+        with pytest.raises(LLMQuotaExceededError):
+            await dependencies.service.process(
+                ticket_text=BUG_REPORT,
+                department_id=dependencies.selected_department.id,
+                template=DESCRIPTION_TEMPLATE,
+                client_id="192.0.2.1",
+            )
+
+        dependencies.department_service.get_by_id.assert_awaited_once()
+        dependencies.drafting_service.draft.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_process_rejects_empty_ticket(
@@ -112,6 +137,7 @@ class TestTicketProcessingService:
                 ticket_text="   ",
                 department_id=dependencies.selected_department.id,
                 template=DESCRIPTION_TEMPLATE,
+                client_id="192.0.2.1",
             )
 
         dependencies.department_service.get_by_id.assert_not_awaited()
@@ -131,6 +157,7 @@ class TestTicketProcessingService:
                 ticket_text=BUG_REPORT,
                 department_id=dependencies.selected_department.id,
                 template="   ",
+                client_id="192.0.2.1",
             )
 
         dependencies.department_service.get_by_id.assert_not_awaited()
@@ -152,6 +179,7 @@ class TestTicketProcessingService:
                 ticket_text=BUG_REPORT,
                 department_id=department_id,
                 template=DESCRIPTION_TEMPLATE,
+                client_id="192.0.2.1",
             )
 
         dependencies.department_service.get_by_id.assert_not_awaited()
@@ -173,6 +201,7 @@ class TestTicketProcessingService:
                 ticket_text=BUG_REPORT,
                 department_id=999,
                 template=DESCRIPTION_TEMPLATE,
+                client_id="192.0.2.1",
             )
 
         dependencies.department_service.get_by_id.assert_awaited_once_with(
@@ -198,6 +227,7 @@ class TestTicketProcessingService:
                 ticket_text=BUG_REPORT,
                 department_id=dependencies.selected_department.id,
                 template=DESCRIPTION_TEMPLATE,
+                client_id="192.0.2.1",
             )
 
         dependencies.department_service.get_by_id.assert_awaited_once_with(
@@ -223,6 +253,7 @@ class TestTicketProcessingService:
                 ticket_text=BUG_REPORT,
                 department_id=dependencies.selected_department.id,
                 template=DESCRIPTION_TEMPLATE,
+                client_id="192.0.2.1",
             )
 
         dependencies.department_service.get_by_id.assert_awaited_once_with(

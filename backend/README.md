@@ -11,8 +11,9 @@ The code follows ports-and-adapters boundaries:
 ```text
 HTTP routes -> application services -> ports -> adapters
     |                  |                  |-> OpenRouter connectors
+    |                  |                  |-> Redis quota adapter
     |                  |                  `-> SQLAlchemy repository
-    `-> Pydantic API schemas                    |
+    `-> Pydantic API schemas                    |-> Redis
                                                 `-> SQLite
 ```
 
@@ -23,8 +24,8 @@ FastAPI dependencies compose concrete adapters. Business services do not import 
 ```text
 app/
 ├── api/             # routes, HTTP schemas, dependency composition contracts
-├── connectors/      # OpenRouter through the OpenAI-compatible async SDK
-├── core/            # validated environment settings
+├── connectors/      # OpenRouter and Redis quota adapters
+├── core/            # validated settings and centralized logging
 ├── db/              # SQLAlchemy base, models, sessions, idempotent demo seed
 ├── ports/           # repository, routing, and drafting protocols
 ├── prompts/         # loading of repository-owned generic prompts
@@ -127,12 +128,23 @@ Copy `.env.example` to `.env` for a direct backend run, or use the root `.env` w
 | `OPENROUTER_SITE_URL` | none | Optional OpenRouter attribution header |
 | `LLM_RATE_LIMIT_PER_MINUTE` | `10` | Shared per-IP LLM operation limit over 60 seconds |
 | `LLM_RATE_LIMIT_PER_DAY` | `20` | Shared per-IP LLM operation limit over 24 hours |
+| `REDIS_URL` | `redis://localhost:6379/0` | Shared backend quota state |
+| `LOG_LEVEL` | `INFO` | Backend logging level |
+| `LOG_FORMAT` | `json` | Structured `json` or local `text` output |
+| `SERVICE_NAME` | `support-assistant-backend` | Structured log service field |
+| `ENVIRONMENT` | `development` | Structured log environment field |
 | `DATABASE_URL` | local SQLite | Any async SQLAlchemy URL supported by installed drivers |
 
-The two ticket endpoints share an in-memory rate limiter. Its state resets when
-the process restarts and is not shared across workers or backend instances.
-Behind a reverse proxy, set Uvicorn's `FORWARDED_ALLOW_IPS` environment variable
-to exact trusted proxy IPs/CIDRs and never to `*`.
+The two ticket endpoints consume the same application quota through a Redis
+adapter. One Lua operation atomically enforces rolling 60-second and 24-hour
+windows across workers and backend instances. Quota counters are ephemeral and
+Redis persistence is not required. Behind a reverse proxy, set Uvicorn's
+`FORWARDED_ALLOW_IPS` environment variable to exact trusted proxy IPs/CIDRs
+and never to `*`.
+
+The backend writes correlated JSON logs to stdout by default. Every HTTP
+response includes `X-Request-ID`; safe request metadata uses the same ID in
+logs. Bodies, API keys, authorization headers, and cookies are not logged.
 
 ## Local run
 
@@ -141,6 +153,7 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.dev.txt
 cp .env.example .env
 # Set OPENROUTER_API_KEY
+# Start Redis separately or set REDIS_URL to an available instance
 .venv/bin/python -m alembic upgrade head
 .venv/bin/python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
@@ -148,6 +161,7 @@ cp .env.example .env
 ## Testing and quality
 
 ```bash
+make fix PYTHON=.venv/bin/python
 make lint PYTHON=.venv/bin/python
 make format-check PYTHON=.venv/bin/python
 make typecheck PYTHON=.venv/bin/python
@@ -160,6 +174,8 @@ make check PYTHON=.venv/bin/python
 
 `make check` is the fast development target: lint, formatting, mypy, and unit
 tests. The scoped integration and E2E targets are orchestrated by the root
-`make verify`; `make test` runs all three backend test levels.
+`make verify`; `make test` runs all three backend test levels. Set
+`TEST_REDIS_URL` to run real Redis quota integration tests; CI provides an
+isolated Redis service.
 
-Unit tests cover service rules, strict LLM response validation, free-only configuration, fallback request parameters, retry/timeout configuration, and error handling. Integration tests use temporary SQLite databases and `httpx.MockTransport`. End-to-end API tests run the FastAPI lifespan in process. No automated test makes a real OpenRouter request.
+Unit tests cover service rules, quota ownership, structured logging, strict LLM response validation, free-only configuration, fallback request parameters, retry/timeout configuration, and error handling. Integration tests use temporary SQLite databases, `httpx.MockTransport`, and optional real Redis. End-to-end API tests run the FastAPI lifespan in process. No automated test makes a real OpenRouter request.

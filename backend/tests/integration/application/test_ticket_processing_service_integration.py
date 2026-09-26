@@ -1,4 +1,5 @@
 import json
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -39,6 +40,7 @@ class TestTicketProcessingServiceIntegration:
     async def test_generates_description_using_selected_department_and_mock_api(
         self,
         session: AsyncSession,
+        llm_quota: MagicMock,
     ) -> None:
         """
         Generate a ticket description using a department stored in SQLite
@@ -167,6 +169,7 @@ class TestTicketProcessingServiceIntegration:
             processing_service = TicketProcessingService(
                 department_service=department_service,
                 ticket_drafting_service=drafting_service,
+                llm_quota=llm_quota,
             )
 
             # Act: generate a description for the previously selected department.
@@ -174,6 +177,7 @@ class TestTicketProcessingServiceIntegration:
                 ticket_text=BUG_REPORT,
                 department_id=selected_department.id,
                 template=DESCRIPTION_TEMPLATE,
+                client_id="192.0.2.1",
             )
 
         # Assert: verify the generated description.
