@@ -39,6 +39,9 @@ The client uses relative routes so the same bundle works in development and behi
 Non-successful responses use FastAPI's `detail` string when available and otherwise show a status-based fallback. Vite proxies `/api` to `127.0.0.1:8000` in local development; the production Nginx image proxies it to the Compose `backend` service.
 
 No OpenRouter key or LLM configuration is compiled into the frontend.
+Production Nginx applies a general per-client anti-flood limit and a 16 KiB
+request-body ceiling to `/api/`, independently from the backend's shared
+Redis quota for LLM operations.
 
 ## Demo data
 
@@ -59,6 +62,7 @@ Open <http://127.0.0.1:5173>.
 
 ```bash
 make install       # npm ci
+make fix           # npm run lint:fix + npm run format
 make lint          # npm run lint
 make format-check  # npm run format:check
 make typecheck     # npm run typecheck

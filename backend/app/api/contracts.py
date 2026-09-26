@@ -20,6 +20,7 @@ class TicketRouter(Protocol):
         self,
         ticket_text: str,
         departments: list[Department],
+        client_id: str,
     ) -> TicketRoutingResult:
         """Return the generated title and department selection."""
         ...
@@ -33,6 +34,7 @@ class TicketProcessor(Protocol):
         ticket_text: str,
         department_id: int,
         template: str,
+        client_id: str,
     ) -> TicketDraft:
         """Return the generated ticket description."""
         ...

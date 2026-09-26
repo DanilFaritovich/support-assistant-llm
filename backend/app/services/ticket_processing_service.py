@@ -1,6 +1,7 @@
 import logging
 
 from app.exceptions import DepartmentNotFoundError
+from app.ports.llm_quota_port import LLMQuotaPort
 from app.schemas.ticket_draft import TicketDraft
 from app.services.department_service import DepartmentService
 from app.services.ticket_drafting_service import TicketDraftingService
@@ -15,15 +16,18 @@ class TicketProcessingService:
         self,
         department_service: DepartmentService,
         ticket_drafting_service: TicketDraftingService,
+        llm_quota: LLMQuotaPort,
     ) -> None:
         self._department_service = department_service
         self._ticket_drafting_service = ticket_drafting_service
+        self._llm_quota = llm_quota
 
     async def process(
         self,
         ticket_text: str,
         department_id: int,
         template: str,
+        client_id: str,
     ) -> TicketDraft:
         """
         Generate a ticket description using a previously selected department.
@@ -32,6 +36,7 @@ class TicketProcessingService:
             ticket_text: The original support ticket.
             department_id: ID of the department selected during routing.
             template: The description template selected by the user.
+            client_id: Transport-derived quota identity.
 
         Returns:
             A generated ticket description.
@@ -64,6 +69,8 @@ class TicketProcessingService:
         if department is None:
             logger.warning("Ticket processing rejected: department not found.")
             raise DepartmentNotFoundError("The selected department does not exist.")
+
+        await self._llm_quota.consume(client_id)
 
         result = await self._ticket_drafting_service.draft(
             ticket_text=ticket_text,

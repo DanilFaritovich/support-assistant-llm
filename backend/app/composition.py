@@ -7,6 +7,7 @@ from app.connectors.openrouter_ticket_drafting_connector import (
 from app.connectors.openrouter_ticket_routing_connector import (
     OpenRouterTicketRoutingConnector,
 )
+from app.ports.llm_quota_port import LLMQuotaPort
 from app.repositories.sqlalchemy_department_repository import (
     SqlAlchemyDepartmentRepository,
 )
@@ -30,6 +31,7 @@ def create_department_service(
 def create_ticket_routing_service(
     llm_client: AsyncOpenAI,
     llm_models: list[str],
+    llm_quota: LLMQuotaPort,
 ) -> TicketRoutingService:
     """Create a service for selecting the responsible department."""
     connector = OpenRouterTicketRoutingConnector(
@@ -39,6 +41,7 @@ def create_ticket_routing_service(
 
     return TicketRoutingService(
         ticket_routing=connector,
+        llm_quota=llm_quota,
     )
 
 
@@ -46,6 +49,7 @@ def create_ticket_processing_service(
     session: AsyncSession,
     llm_client: AsyncOpenAI,
     llm_models: list[str],
+    llm_quota: LLMQuotaPort,
 ) -> TicketProcessingService:
     """Create a service for generating a ticket description."""
     department_service = create_department_service(session)
@@ -62,4 +66,5 @@ def create_ticket_processing_service(
     return TicketProcessingService(
         department_service=department_service,
         ticket_drafting_service=drafting_service,
+        llm_quota=llm_quota,
     )

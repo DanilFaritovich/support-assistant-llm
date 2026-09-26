@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from app.ports.llm_quota_port import LLMQuotaPort
 from app.schemas.department import Department
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -26,3 +28,11 @@ def list_departments() -> list[Department]:
         )
         for index, item in enumerate(departments_data, start=1)
     ]
+
+
+@pytest.fixture
+def llm_quota() -> MagicMock:
+    """Provide an allowed shared-quota operation for service tests."""
+    quota = MagicMock(spec=LLMQuotaPort)
+    quota.consume = AsyncMock()
+    return quota

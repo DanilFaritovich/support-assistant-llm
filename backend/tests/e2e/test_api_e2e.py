@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import (
 
 from app.db.base import Base
 from app.db.models.department import DepartmentORM
+from app.exceptions import LLMQuotaExceededError
 from app.schemas.department import Department
 
 main_module = importlib.import_module("app.main")
@@ -45,6 +46,20 @@ type APIClientFixture = tuple[
 ]
 
 
+class FakeLLMQuota:
+    """Provide deterministic process-local quota state only for API tests."""
+
+    def __init__(self, per_minute: int = 10) -> None:
+        self._per_minute = per_minute
+        self._requests: dict[str, int] = {}
+
+    async def consume(self, client_id: str) -> None:
+        count = self._requests.get(client_id, 0)
+        if count >= self._per_minute:
+            raise LLMQuotaExceededError(retry_after=60)
+        self._requests[client_id] = count + 1
+
+
 @pytest_asyncio.fixture
 async def api_client(
     tmp_path: Path,
@@ -68,8 +83,6 @@ async def api_client(
         "openrouter_models",
         "test-model:free",
     )
-    monkeypatch.setattr(main_module.settings, "llm_rate_limit_per_minute", 10)
-    monkeypatch.setattr(main_module.settings, "llm_rate_limit_per_day", 20)
 
     async def skip_demo_seed(session: object) -> int:
         return 0
@@ -229,7 +242,7 @@ async def api_client(
             lambda: llm_client,
         )
 
-        app = main_module.create_app()
+        app = main_module.create_app(llm_quota_override=FakeLLMQuota())
 
         # ASGITransport does not start the FastAPI lifespan automatically.
         async with app.router.lifespan_context(app):
@@ -245,6 +258,20 @@ async def api_client(
 
 @pytest.mark.asyncio
 class TestSupportAssistantAPI:
+    async def test_health_returns_request_correlation_id(
+        self,
+        api_client: APIClientFixture,
+    ) -> None:
+        """Return readiness and a generated request correlation ID."""
+        client, _, llm_requests = api_client
+
+        response = await client.get("/api/health")
+
+        assert response.status_code == 200
+        assert response.json() == {"status": "ok"}
+        assert len(response.headers["X-Request-ID"]) == 32
+        assert llm_requests == []
+
     async def test_get_departments_returns_database_records(
         self,
         api_client: APIClientFixture,

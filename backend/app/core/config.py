@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -62,6 +63,33 @@ class Settings(BaseSettings):
         description="Maximum LLM operations per client IP in 24 hours.",
     )
 
+    redis_url: SecretStr = Field(
+        default=SecretStr("redis://localhost:6379/0"),
+        description="Redis URL for shared LLM quota state.",
+    )
+
+    log_level: str = Field(
+        default="INFO",
+        description="Application logging level.",
+    )
+
+    log_format: Literal["json", "text"] = Field(
+        default="json",
+        description="Application log output format.",
+    )
+
+    service_name: str = Field(
+        default="support-assistant-backend",
+        min_length=1,
+        description="Service name attached to structured logs.",
+    )
+
+    environment: str = Field(
+        default="development",
+        min_length=1,
+        description="Deployment environment attached to structured logs.",
+    )
+
     @field_validator("openrouter_models")
     @classmethod
     def validate_free_models(cls, value: str) -> str:
@@ -82,6 +110,16 @@ class Settings(BaseSettings):
             )
 
         return ",".join(models)
+
+    @field_validator("log_level")
+    @classmethod
+    def validate_log_level(cls, value: str) -> str:
+        """Normalize and validate the configured Python log level."""
+        normalized = value.upper()
+        allowed = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if normalized not in allowed:
+            raise ValueError(f"LOG_LEVEL must be one of: {', '.join(sorted(allowed))}.")
+        return normalized
 
     @property
     def openrouter_model_list(self) -> list[str]:

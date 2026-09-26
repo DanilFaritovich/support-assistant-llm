@@ -1,72 +1,59 @@
-import asyncio
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
 
-from app.api.rate_limiting import InMemoryLLMRateLimiter
-
-
-class FakeClock:
-    def __init__(self) -> None:
-        self.current = 0.0
-
-    def __call__(self) -> float:
-        return self.current
-
-    def advance(self, seconds: float) -> None:
-        self.current += seconds
+from app.connectors.redis_llm_quota_adapter import RedisLLMQuotaAdapter
+from app.exceptions import LLMQuotaExceededError, LLMQuotaUnavailableError
 
 
-@pytest.mark.asyncio
-async def test_allows_ten_requests_per_minute_and_then_recovers() -> None:
-    clock = FakeClock()
-    limiter = InMemoryLLMRateLimiter(10, 20, clock)
-
-    results = [await limiter.check_and_record("192.0.2.1") for _ in range(10)]
-
-    assert results == [None] * 10
-    assert await limiter.check_and_record("192.0.2.1") == 60
-
-    clock.advance(60)
-
-    assert await limiter.check_and_record("192.0.2.1") is None
+@pytest.fixture
+def redis_client() -> MagicMock:
+    """Provide a mocked Redis client at the adapter boundary."""
+    client = MagicMock(spec=Redis)
+    client.eval = AsyncMock(return_value=0)
+    return client
 
 
 @pytest.mark.asyncio
-async def test_allows_twenty_requests_per_day_and_then_recovers() -> None:
-    clock = FakeClock()
-    limiter = InMemoryLLMRateLimiter(10, 20, clock)
-
-    first_window = [await limiter.check_and_record("192.0.2.1") for _ in range(10)]
-    clock.advance(60)
-    second_window = [await limiter.check_and_record("192.0.2.1") for _ in range(10)]
-
-    assert first_window == [None] * 10
-    assert second_window == [None] * 10
-    assert await limiter.check_and_record("192.0.2.1") == 86_340
-
-    clock.advance(86_340)
-
-    assert await limiter.check_and_record("192.0.2.1") is None
-
-
-@pytest.mark.asyncio
-async def test_tracks_different_client_ips_independently() -> None:
-    clock = FakeClock()
-    limiter = InMemoryLLMRateLimiter(1, 2, clock)
-
-    assert await limiter.check_and_record("192.0.2.1") is None
-    assert await limiter.check_and_record("192.0.2.1") == 60
-    assert await limiter.check_and_record("198.51.100.2") is None
-
-
-@pytest.mark.asyncio
-async def test_serializes_concurrent_limit_checks() -> None:
-    clock = FakeClock()
-    limiter = InMemoryLLMRateLimiter(10, 20, clock)
-
-    results = await asyncio.gather(
-        *(limiter.check_and_record("192.0.2.1") for _ in range(11))
+async def test_consumes_quota_without_storing_raw_client_id(
+    redis_client: MagicMock,
+) -> None:
+    adapter = RedisLLMQuotaAdapter(
+        redis_client=redis_client,
+        per_minute=10,
+        per_day=20,
+        clock=lambda: 100.0,
     )
 
-    assert results.count(None) == 10
-    assert results.count(60) == 1
+    await adapter.consume("192.0.2.1")
+
+    redis_client.eval.assert_awaited_once()
+    key = redis_client.eval.await_args.args[2]
+    assert key.startswith("quota:llm:")
+    assert "192.0.2.1" not in key
+
+
+@pytest.mark.asyncio
+async def test_raises_application_error_with_retry_after(
+    redis_client: MagicMock,
+) -> None:
+    redis_client.eval.return_value = 42
+    adapter = RedisLLMQuotaAdapter(redis_client, 10, 20)
+
+    with pytest.raises(LLMQuotaExceededError) as error:
+        await adapter.consume("192.0.2.1")
+
+    assert error.value.retry_after == 42
+
+
+@pytest.mark.asyncio
+async def test_translates_redis_failure_to_application_error(
+    redis_client: MagicMock,
+) -> None:
+    redis_client.eval.side_effect = RedisError("Redis unavailable")
+    adapter = RedisLLMQuotaAdapter(redis_client, 10, 20)
+
+    with pytest.raises(LLMQuotaUnavailableError):
+        await adapter.consume("192.0.2.1")

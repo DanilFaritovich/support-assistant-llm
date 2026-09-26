@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.connectors.openrouter_ticket_routing_connector import TicketRoutingError
+from app.exceptions import LLMQuotaExceededError
 from app.ports.ticket_routing_port import TicketRoutingPort
 from app.schemas.department import Department
 from app.schemas.ticket_routing import TicketRoutingResult
@@ -16,6 +17,7 @@ class TestTicketRoutingService:
     def dependencies(
         self,
         list_departments: list[Department],
+        llm_quota: MagicMock,
     ) -> tuple[
         TicketRoutingService,
         MagicMock,
@@ -34,6 +36,7 @@ class TestTicketRoutingService:
 
         service = TicketRoutingService(
             ticket_routing=routing_port,
+            llm_quota=llm_quota,
         )
 
         return service, routing_port, expected_result
@@ -47,6 +50,7 @@ class TestTicketRoutingService:
             TicketRoutingResult,
         ],
         list_departments: list[Department],
+        llm_quota: MagicMock,
     ) -> None:
         """Pass one bug and available departments to the routing port."""
         service, routing_port, expected_result = dependencies
@@ -54,14 +58,39 @@ class TestTicketRoutingService:
         result = await service.route(
             ticket_text=BUG_REPORT,
             departments=list_departments,
+            client_id="192.0.2.1",
         )
 
         assert result is expected_result
+        llm_quota.consume.assert_awaited_once_with("192.0.2.1")
 
         routing_port.route.assert_awaited_once_with(
             ticket_text=BUG_REPORT,
             departments=list_departments,
         )
+
+    @pytest.mark.asyncio
+    async def test_route_stops_before_connector_when_quota_is_exhausted(
+        self,
+        dependencies: tuple[
+            TicketRoutingService,
+            MagicMock,
+            TicketRoutingResult,
+        ],
+        list_departments: list[Department],
+        llm_quota: MagicMock,
+    ) -> None:
+        service, routing_port, _ = dependencies
+        llm_quota.consume.side_effect = LLMQuotaExceededError(retry_after=60)
+
+        with pytest.raises(LLMQuotaExceededError):
+            await service.route(
+                ticket_text=BUG_REPORT,
+                departments=list_departments,
+                client_id="192.0.2.1",
+            )
+
+        routing_port.route.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_route_rejects_empty_ticket(
@@ -83,6 +112,7 @@ class TestTicketRoutingService:
             await service.route(
                 ticket_text="   ",
                 departments=list_departments,
+                client_id="192.0.2.1",
             )
 
         routing_port.route.assert_not_awaited()
@@ -106,6 +136,7 @@ class TestTicketRoutingService:
             await service.route(
                 ticket_text=BUG_REPORT,
                 departments=[],
+                client_id="192.0.2.1",
             )
 
         routing_port.route.assert_not_awaited()
@@ -132,6 +163,7 @@ class TestTicketRoutingService:
             await service.route(
                 ticket_text=BUG_REPORT,
                 departments=list_departments,
+                client_id="192.0.2.1",
             )
 
         routing_port.route.assert_awaited_once_with(

@@ -1,5 +1,6 @@
 import logging
 
+from app.ports.llm_quota_port import LLMQuotaPort
 from app.ports.ticket_routing_port import TicketRoutingPort
 from app.schemas.department import Department
 from app.schemas.ticket_routing import TicketRoutingResult
@@ -13,13 +14,16 @@ class TicketRoutingService:
     def __init__(
         self,
         ticket_routing: TicketRoutingPort,
+        llm_quota: LLMQuotaPort,
     ) -> None:
         self._ticket_routing = ticket_routing
+        self._llm_quota = llm_quota
 
     async def route(
         self,
         ticket_text: str,
         departments: list[Department],
+        client_id: str,
     ) -> TicketRoutingResult:
         """
         Route a single bug report using the provided departments.
@@ -27,6 +31,7 @@ class TicketRoutingService:
         Args:
             ticket_text: The original bug report.
             departments: Available IT departments.
+            client_id: Transport-derived quota identity.
 
         Returns:
             The generated title, selected department ID,
@@ -42,6 +47,8 @@ class TicketRoutingService:
         if not departments:
             logger.warning("Ticket routing rejected: department list is empty.")
             raise ValueError("Department list must not be empty.")
+
+        await self._llm_quota.consume(client_id)
 
         logger.debug(
             "Starting ticket routing: departments_count=%d.",
