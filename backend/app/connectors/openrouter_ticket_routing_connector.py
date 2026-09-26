@@ -45,8 +45,8 @@ class OpenRouterTicketRoutingConnector(
             raise ValueError("Department IDs must be unique.")
 
         logger.debug(
-            "Preparing ticket routing request: departments_count=%d.",
-            len(departments),
+            "Preparing ticket routing request.",
+            extra={"departments_count": len(departments)},
         )
 
         departments_json = json.dumps(
@@ -108,8 +108,11 @@ class OpenRouterTicketRoutingConnector(
             raise TicketRoutingError("The selected department is not available.")
 
         logger.info(
-            "Ticket routing completed successfully: department_id=%d.",
-            result.department_id,
+            "Ticket routing completed successfully.",
+            extra={
+                "event": "llm_ticket_routing_completed",
+                "department_id": result.department_id,
+            },
         )
 
         return result

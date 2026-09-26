@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -62,6 +63,41 @@ class TestTicketDraftingService:
             department=department,
             template=DESCRIPTION_TEMPLATE,
         )
+
+    @pytest.mark.asyncio
+    async def test_draft_logs_structured_completion_event(
+        self,
+        dependencies: tuple[
+            TicketDraftingService,
+            MagicMock,
+            TicketDraft,
+        ],
+        list_departments: list[Department],
+        caplog: pytest.LogCaptureFixture,
+    ) -> None:
+        """Expose completion context as queryable log fields."""
+        service, _, _ = dependencies
+        department = list_departments[0]
+
+        with caplog.at_level(
+            logging.INFO,
+            logger="app.services.ticket_drafting_service",
+        ):
+            await service.draft(
+                ticket_text=BUG_REPORT,
+                department=department,
+                template=DESCRIPTION_TEMPLATE,
+            )
+
+        completion_record = next(
+            record
+            for record in caplog.records
+            if getattr(record, "event", None) == "ticket_drafting_completed"
+        )
+        assert completion_record.getMessage() == (
+            "Ticket drafting completed successfully."
+        )
+        assert completion_record.department_id == department.id
 
     @pytest.mark.asyncio
     async def test_draft_rejects_empty_ticket(

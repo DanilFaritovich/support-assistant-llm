@@ -51,6 +51,12 @@ async def seed_demo_departments(session: AsyncSession) -> int:
     if missing:
         session.add_all(missing)
         await session.commit()
-        logger.info("Seeded demo IT departments: count=%d.", len(missing))
+        logger.info(
+            "Seeded demo IT departments.",
+            extra={
+                "event": "demo_departments_seeded",
+                "departments_count": len(missing),
+            },
+        )
 
     return len(missing)

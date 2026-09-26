@@ -56,8 +56,8 @@ class OpenRouterTicketDraftingConnector(
             raise ValueError("Description template must not be empty.")
 
         logger.debug(
-            "Preparing ticket drafting request: department_id=%d.",
-            department.id,
+            "Preparing ticket drafting request.",
+            extra={"department_id": department.id},
         )
 
         request_data = {
@@ -107,8 +107,8 @@ class OpenRouterTicketDraftingConnector(
             )
 
         logger.debug(
-            "Ticket drafting completed successfully: department_id=%d.",
-            department.id,
+            "Ticket drafting completed successfully.",
+            extra={"department_id": department.id},
         )
 
         return result

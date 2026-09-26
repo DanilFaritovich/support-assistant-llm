@@ -36,8 +36,8 @@ class SqlAlchemyDepartmentRepository(DepartmentRepository):
             departments = result.scalars().all()
 
             logger.debug(
-                "Retrieved %d IT departments from the database",
-                len(departments),
+                "Retrieved IT departments from the database.",
+                extra={"departments_count": len(departments)},
             )
 
             if not departments:
@@ -59,8 +59,8 @@ class SqlAlchemyDepartmentRepository(DepartmentRepository):
     async def get_by_id(self, department_id: int) -> Department | None:
         """Retrieve a department by its primary key."""
         logger.debug(
-            "Loading department: department_id=%d.",
-            department_id,
+            "Loading department.",
+            extra={"department_id": department_id},
         )
 
         try:
@@ -70,15 +70,18 @@ class SqlAlchemyDepartmentRepository(DepartmentRepository):
             )
         except SQLAlchemyError:
             logger.exception(
-                "Failed to load department: department_id=%d.",
-                department_id,
+                "Failed to load department.",
+                extra={
+                    "event": "department_load_failed",
+                    "department_id": department_id,
+                },
             )
             raise
 
         if department is None:
             logger.debug(
-                "Department not found: department_id=%d.",
-                department_id,
+                "Department not found.",
+                extra={"department_id": department_id},
             )
             return None
 

@@ -69,8 +69,11 @@ class OpenRouterBaseConnector:
 
         except APIError as exc:
             logger.error(
-                "LLM API request failed: error_type=%s.",
-                type(exc).__name__,
+                "LLM API request failed.",
+                extra={
+                    "event": "llm_api_request_failed",
+                    "error_type": type(exc).__name__,
+                },
             )
             raise
 

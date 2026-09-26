@@ -22,8 +22,8 @@ class DepartmentService:
         departments = await self._department_repository.get_all()
 
         logger.debug(
-            "Loaded departments successfully: count=%d.",
-            len(departments),
+            "Loaded departments successfully.",
+            extra={"departments_count": len(departments)},
         )
 
         return departments
