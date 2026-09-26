@@ -68,6 +68,8 @@ async def api_client(
         "openrouter_models",
         "test-model:free",
     )
+    monkeypatch.setattr(main_module.settings, "llm_rate_limit_per_minute", 10)
+    monkeypatch.setattr(main_module.settings, "llm_rate_limit_per_day", 20)
 
     async def skip_demo_seed(session: object) -> int:
         return 0
@@ -368,4 +370,74 @@ class TestSupportAssistantAPI:
             "detail": "The selected department does not exist.",
         }
 
+        assert llm_requests == []
+
+    async def test_limits_llm_operations_without_limiting_technical_endpoints(
+        self,
+        api_client: APIClientFixture,
+    ) -> None:
+        """Return HTTP 429 after ten shared LLM operations from one IP."""
+        client, departments, llm_requests = api_client
+
+        for _ in range(10):
+            response = await client.post(
+                "/api/tickets/route",
+                json={"ticket_text": BUG_REPORT},
+            )
+            assert response.status_code == 200
+
+        limited_response = await client.post(
+            "/api/tickets/process",
+            json={
+                "ticket_text": BUG_REPORT,
+                "department_id": departments[1].id,
+                "template": DESCRIPTION_TEMPLATE,
+            },
+        )
+
+        assert limited_response.status_code == 429
+        assert limited_response.json() == {
+            "detail": "Too many LLM requests. Please try again later.",
+        }
+        assert 1 <= int(limited_response.headers["Retry-After"]) <= 60
+        assert llm_requests == ["routing"] * 10
+
+        health_response = await client.get("/api/health")
+        departments_response = await client.get("/api/departments")
+
+        assert health_response.status_code == 200
+        assert departments_response.status_code == 200
+        assert llm_requests == ["routing"] * 10
+
+    async def test_rejects_oversized_input_without_invoking_the_llm(
+        self,
+        api_client: APIClientFixture,
+    ) -> None:
+        """Validate ticket and template limits at the HTTP boundary."""
+        client, departments, llm_requests = api_client
+
+        routing_response = await client.post(
+            "/api/tickets/route",
+            json={"ticket_text": "x" * 4001},
+        )
+        processing_ticket_response = await client.post(
+            "/api/tickets/process",
+            json={
+                "ticket_text": "x" * 4001,
+                "department_id": departments[1].id,
+                "template": DESCRIPTION_TEMPLATE,
+            },
+        )
+        processing_template_response = await client.post(
+            "/api/tickets/process",
+            json={
+                "ticket_text": BUG_REPORT,
+                "department_id": departments[1].id,
+                "template": "x" * 2001,
+            },
+        )
+
+        assert routing_response.status_code == 422
+        assert processing_ticket_response.status_code == 422
+        assert processing_template_response.status_code == 422
         assert llm_requests == []

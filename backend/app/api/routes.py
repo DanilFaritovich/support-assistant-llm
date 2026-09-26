@@ -1,13 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 
 from app.api.contracts import DepartmentReader, TicketProcessor, TicketRouter
 from app.api.dependencies import (
     get_department_reader,
+    get_llm_rate_limiter,
     get_ticket_processor,
     get_ticket_router,
 )
+from app.api.rate_limiting import InMemoryLLMRateLimiter, enforce_llm_rate_limit
 from app.api.schemas.department import DepartmentResponse
 from app.api.schemas.ticket_processing import (
     TicketProcessingRequest,
@@ -57,6 +59,7 @@ async def get_departments(
     tags=["tickets"],
 )
 async def route_ticket(
+    request: Request,
     payload: TicketRoutingRequest,
     reader: Annotated[
         DepartmentReader,
@@ -66,8 +69,14 @@ async def route_ticket(
         TicketRouter,
         Depends(get_ticket_router),
     ],
+    rate_limiter: Annotated[
+        InMemoryLLMRateLimiter,
+        Depends(get_llm_rate_limiter),
+    ],
 ) -> TicketRoutingResponse:
     """Generate a title and select a department for a single ticket."""
+    await enforce_llm_rate_limit(request, rate_limiter)
+
     departments = await reader.get_all()
 
     if not departments:
@@ -108,13 +117,20 @@ async def route_ticket(
     tags=["tickets"],
 )
 async def process_ticket(
+    request: Request,
     payload: TicketProcessingRequest,
     processor: Annotated[
         TicketProcessor,
         Depends(get_ticket_processor),
     ],
+    rate_limiter: Annotated[
+        InMemoryLLMRateLimiter,
+        Depends(get_llm_rate_limiter),
+    ],
 ) -> TicketProcessingResponse:
     """Generate a description for a previously routed ticket."""
+    await enforce_llm_rate_limit(request, rate_limiter)
+
     result = await processor.process(
         ticket_text=payload.ticket_text,
         department_id=payload.department_id,

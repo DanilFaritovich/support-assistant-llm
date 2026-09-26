@@ -93,9 +93,17 @@ Backend не публикует отдельный порт хоста. SQLite �
 | `OPENROUTER_TIMEOUT_SECONDS` | Нет | `60` | Таймаут запроса от 1 до 180 секунд |
 | `OPENROUTER_MAX_RETRIES` | Нет | `2` | Повторы SDK при временных ошибках, от 0 до 3 |
 | `OPENROUTER_SITE_URL` | Нет | пусто | Необязательный URL проекта для атрибуции OpenRouter |
+| `LLM_RATE_LIMIT_PER_MINUTE` | Нет | `10` | Общий IP-лимит двух LLM-endpoint'ов за 60 секунд |
+| `LLM_RATE_LIMIT_PER_DAY` | Нет | `20` | Общий IP-лимит двух LLM-endpoint'ов за 24 часа |
+| `FORWARDED_ALLOW_IPS` | Нет | только loopback | Точные доверенные IP/CIDR reverse proxy для Uvicorn |
 | `DATABASE_URL` | Нет | задаётся Compose | URL SQLAlchemy для запуска без Compose |
 
 Не добавляйте настоящий ключ в отслеживаемые Git-файлы. Ключ не попадает в frontend bundle.
+
+Состояние rate limiter хранится в одном процессе backend и сбрасывается после
+перезапуска. Оно не разделяется между несколькими workers или backend-инстансами.
+Для публичного деплоя укажите в `FORWARDED_ALLOW_IPS` точные адреса или сети
+Nginx/Caddy, чтобы Uvicorn безопасно определял IP клиента; не используйте `*`.
 
 ## API
 
@@ -106,9 +114,24 @@ Backend не публикует отдельный порт хоста. SQLite �
 | `POST` | `/api/tickets/route` | Название, предложенный департамент и обоснование |
 | `POST` | `/api/tickets/process` | Описание для переданного итогового департамента |
 
+Максимальная длина `ticket_text` — 4 000 символов, пользовательского
+`template` — 2 000 символов.
+
 Интерактивная документация OpenAPI доступна по `/docs` при прямом обращении к backend в режиме разработки.
 
 ## Разработка и тестирование
+
+Запуск обычных проверок проекта из корня репозитория:
+
+```bash
+make check
+```
+
+Полный набор CI-проверок, включая Docker Compose smoke-check:
+
+```bash
+make ci
+```
 
 Backend:
 
@@ -116,19 +139,16 @@ Backend:
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.dev.txt
-.venv/bin/python -m ruff check .
-.venv/bin/python -m ruff format --check .
-.venv/bin/python -m mypy app
-.venv/bin/python -m pytest
+make check PYTHON=.venv/bin/python
 ```
 
 Frontend:
 
 ```bash
 cd frontend
-npm ci
-npm run check
-npm run build
+make install
+make check
+make build
 ```
 
 Автоматические тесты используют моки и локальные транспорты и не обращаются к OpenRouter.

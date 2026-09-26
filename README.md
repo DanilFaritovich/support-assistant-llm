@@ -93,9 +93,17 @@ The backend is not published on a host port. SQLite data is retained in the `sup
 | `OPENROUTER_TIMEOUT_SECONDS` | No | `60` | Per-request timeout, 1–180 seconds |
 | `OPENROUTER_MAX_RETRIES` | No | `2` | SDK retries for transient failures, 0–3 |
 | `OPENROUTER_SITE_URL` | No | empty | Optional attribution URL sent to OpenRouter |
+| `LLM_RATE_LIMIT_PER_MINUTE` | No | `10` | Shared per-IP limit for the two LLM endpoints over 60 seconds |
+| `LLM_RATE_LIMIT_PER_DAY` | No | `20` | Shared per-IP limit for the two LLM endpoints over 24 hours |
+| `FORWARDED_ALLOW_IPS` | No | loopback only | Exact trusted reverse-proxy IPs/CIDRs used by Uvicorn |
 | `DATABASE_URL` | No | Compose-managed SQLite URL | SQLAlchemy database URL for non-Compose deployments |
 
 Do not place a real key in any tracked file. The frontend bundle never receives the key.
+
+The rate limiter is stored in one backend process and resets on restart. It is
+not shared by multiple workers or backend instances. In a public deployment,
+set `FORWARDED_ALLOW_IPS` to the exact Nginx/Caddy addresses or networks so
+Uvicorn can safely determine the client IP; never set it to `*`.
 
 ## API
 
@@ -106,9 +114,24 @@ Do not place a real key in any tracked file. The frontend bundle never receives 
 | `POST` | `/api/tickets/route` | Propose title, department, and rationale |
 | `POST` | `/api/tickets/process` | Generate a description for the supplied final department |
 
+`ticket_text` accepts at most 4,000 characters. The custom `template` accepts
+at most 2,000 characters.
+
 Interactive OpenAPI documentation is available at `/docs` when the backend is accessed directly in a development setup.
 
 ## Development and testing
+
+Run the regular project checks from the repository root:
+
+```bash
+make check
+```
+
+Run the complete CI-equivalent suite, including the Docker Compose smoke-check:
+
+```bash
+make ci
+```
 
 Backend:
 
@@ -116,19 +139,16 @@ Backend:
 cd backend
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.dev.txt
-.venv/bin/python -m ruff check .
-.venv/bin/python -m ruff format --check .
-.venv/bin/python -m mypy app
-.venv/bin/python -m pytest
+make check PYTHON=.venv/bin/python
 ```
 
 Frontend:
 
 ```bash
 cd frontend
-npm ci
-npm run check
-npm run build
+make install
+make check
+make build
 ```
 
 Automated tests use mocks and local transports; they never make real OpenRouter requests.

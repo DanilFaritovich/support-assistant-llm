@@ -1,11 +1,12 @@
 from collections.abc import AsyncIterator
-from typing import Annotated
+from typing import Annotated, cast
 
 from fastapi import Depends, HTTPException, Request
 from openai import AsyncOpenAI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.contracts import DepartmentReader, TicketProcessor, TicketRouter
+from app.api.rate_limiting import InMemoryLLMRateLimiter
 from app.composition import (
     create_department_service,
     create_ticket_processing_service,
@@ -24,6 +25,11 @@ async def get_session(
 
     async with session_factory() as session:
         yield session
+
+
+def get_llm_rate_limiter(request: Request) -> InMemoryLLMRateLimiter:
+    """Provide the process-local limiter for LLM-backed operations."""
+    return cast(InMemoryLLMRateLimiter, request.app.state.llm_rate_limiter)
 
 
 def get_department_reader(

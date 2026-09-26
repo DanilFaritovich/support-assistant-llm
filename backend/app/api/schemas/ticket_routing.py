@@ -6,6 +6,7 @@ class TicketRoutingRequest(BaseModel):
 
     ticket_text: str = Field(
         min_length=1,
+        max_length=4000,
         description="Original content of a single support ticket.",
     )
 

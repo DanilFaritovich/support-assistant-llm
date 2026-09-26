@@ -60,6 +60,18 @@ describe('App', () => {
     ).toBe(DEMO_TEMPLATE);
   });
 
+  it('exposes the backend input limits in the text areas', async () => {
+    const wrapper = mount(App);
+    await flushPromises();
+
+    expect(wrapper.get('#ticket-text').attributes('maxlength')).toBe('4000');
+
+    await route(wrapper);
+    await wrapper.get('#confirm-department').trigger('click');
+
+    expect(wrapper.get('#description-template').attributes('maxlength')).toBe('2000');
+  });
+
   it('requires confirmation before showing description generation', async () => {
     const wrapper = mount(App);
     await flushPromises();

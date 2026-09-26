@@ -13,6 +13,9 @@ const ticketText = ref('');
 const template = ref('');
 const selectedDemoId = ref(DEMO_TICKETS[0]?.id ?? '');
 
+const MAX_TICKET_TEXT_LENGTH = 4000;
+const MAX_TEMPLATE_LENGTH = 2000;
+
 const departments = ref<Department[]>([]);
 const departmentsLoading = ref(false);
 const departmentsError = ref('');
@@ -215,6 +218,7 @@ onMounted(() => void loadDepartments());
             id="ticket-text"
             v-model="ticketText"
             rows="9"
+            :maxlength="MAX_TICKET_TEXT_LENGTH"
             placeholder="Опишите проблему, наблюдаемый и ожидаемый результат..."
             :disabled="routing || processing"
           />
@@ -360,6 +364,7 @@ onMounted(() => void loadDepartments());
               id="description-template"
               v-model="template"
               rows="8"
+              :maxlength="MAX_TEMPLATE_LENGTH"
               placeholder="Введите структуру будущего описания..."
               :disabled="routing || processing"
             />

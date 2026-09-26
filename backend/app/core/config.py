@@ -50,6 +50,18 @@ class Settings(BaseSettings):
         description="Optional public project URL sent in the HTTP-Referer header.",
     )
 
+    llm_rate_limit_per_minute: int = Field(
+        default=10,
+        ge=1,
+        description="Maximum LLM operations per client IP in 60 seconds.",
+    )
+
+    llm_rate_limit_per_day: int = Field(
+        default=20,
+        ge=1,
+        description="Maximum LLM operations per client IP in 24 hours.",
+    )
+
     @field_validator("openrouter_models")
     @classmethod
     def validate_free_models(cls, value: str) -> str:
