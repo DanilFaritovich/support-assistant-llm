@@ -6,6 +6,7 @@ class TicketProcessingRequest(BaseModel):
 
     ticket_text: str = Field(
         min_length=1,
+        max_length=4000,
         description="Original content of a single support ticket.",
     )
     department_id: int = Field(
@@ -14,6 +15,7 @@ class TicketProcessingRequest(BaseModel):
     )
     template: str = Field(
         min_length=1,
+        max_length=2000,
         description="Description template selected by the user.",
     )
 

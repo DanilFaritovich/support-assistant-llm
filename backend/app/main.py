@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from openai import APIError
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from app.api.rate_limiting import InMemoryLLMRateLimiter
 from app.api.routes import router
 from app.connectors.llm_client import create_llm_client
 from app.connectors.openrouter_ticket_drafting_connector import TicketDraftingError
@@ -26,6 +27,10 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize and release shared application resources."""
     engine = create_async_engine(settings.database_url)
+    app.state.llm_rate_limiter = InMemoryLLMRateLimiter(
+        per_minute=settings.llm_rate_limit_per_minute,
+        per_day=settings.llm_rate_limit_per_day,
+    )
 
     async with AsyncExitStack() as stack:
         stack.push_async_callback(engine.dispose)
