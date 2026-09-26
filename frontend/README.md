@@ -62,6 +62,7 @@ make install       # npm ci
 make lint          # npm run lint
 make format-check  # npm run format:check
 make typecheck     # npm run typecheck
+make test-unit     # npm run test
 make test          # npm run test
 make check         # npm run check
 make build         # npm run build

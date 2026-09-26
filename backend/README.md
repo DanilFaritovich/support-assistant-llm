@@ -148,7 +148,18 @@ cp .env.example .env
 ## Testing and quality
 
 ```bash
+make lint PYTHON=.venv/bin/python
+make format-check PYTHON=.venv/bin/python
+make typecheck PYTHON=.venv/bin/python
+make test-unit PYTHON=.venv/bin/python
+make test-integration PYTHON=.venv/bin/python
+make test-e2e PYTHON=.venv/bin/python
+make test PYTHON=.venv/bin/python
 make check PYTHON=.venv/bin/python
 ```
+
+`make check` is the fast development target: lint, formatting, mypy, and unit
+tests. The scoped integration and E2E targets are orchestrated by the root
+`make verify`; `make test` runs all three backend test levels.
 
 Unit tests cover service rules, strict LLM response validation, free-only configuration, fallback request parameters, retry/timeout configuration, and error handling. Integration tests use temporary SQLite databases and `httpx.MockTransport`. End-to-end API tests run the FastAPI lifespan in process. No automated test makes a real OpenRouter request.

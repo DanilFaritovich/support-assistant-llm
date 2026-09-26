@@ -1,24 +1,26 @@
-.PHONY: all install lint format-check typecheck test build check
+.PHONY: all install lint format-check typecheck test-unit test build check
 
 all: check build
 
 install:
-	npm ci
+	@npm ci
 
 lint:
-	npm run lint
+	@npm run lint
 
 format-check:
-	npm run format:check
+	@npm run format:check
 
 typecheck:
-	npm run typecheck
+	@npm run typecheck
+
+test-unit: test
 
 test:
-	npm run test
+	@npm run test
 
 build:
-	npm run build
+	@npm run build
 
 check:
-	npm run check
+	@npm run check

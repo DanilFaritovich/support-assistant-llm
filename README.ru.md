@@ -121,17 +121,21 @@ Nginx/Caddy, чтобы Uvicorn безопасно определял IP кли�
 
 ## Разработка и тестирование
 
-Запуск обычных проверок проекта из корня репозитория:
+Корневой Makefile — единый стабильный интерфейс проекта:
 
-```bash
-make check
-```
+| Команда | Назначение |
+| --- | --- |
+| `make check` | Быстрые lint, format, type и unit-проверки backend/frontend |
+| `make verify` | Integration/E2E-тесты backend и production build frontend |
+| `make test` | Все существующие тесты backend и frontend |
+| `make build` | Production build frontend |
+| `make docker-build` | Проверка Compose и сборка образов |
+| `make docker-check` | Сборка, запуск, health/smoke-check и cleanup Compose |
+| `make ci` | Полный путь `check + verify + docker-check` для GitHub Actions |
 
-Полный набор CI-проверок, включая Docker Compose smoke-check:
-
-```bash
-make ci
-```
+В обычном цикле разработки используйте `make check`. Если изменения затрагивают
+интеграцию, E2E-сценарии, сборку или CI, после него выполните `make verify`.
+Более тяжёлый `make ci` предназначен прежде всего для GitHub Actions.
 
 Backend:
 
@@ -153,8 +157,15 @@ make build
 
 Автоматические тесты используют моки и локальные транспорты и не обращаются к OpenRouter.
 
+GitHub Actions выполняет полный CI для Pull Request и push в `develop` и
+`main`. Новая работа начинается от `develop` в task-ветке и возвращается
+через Pull Request; перенос изменений из `develop` в `main` выполняется
+отдельным Pull Request.
+
 ## Документация компонентов
 
+- [Инструкции для Codex](AGENTS.md)
+- [Описание архитектуры](ARCHITECTURE.md)
 - [Техническая документация frontend](frontend/README.md)
 - [Техническая документация backend](backend/README.md)
 

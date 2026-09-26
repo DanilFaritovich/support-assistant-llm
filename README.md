@@ -121,17 +121,21 @@ Interactive OpenAPI documentation is available at `/docs` when the backend is ac
 
 ## Development and testing
 
-Run the regular project checks from the repository root:
+The root Makefile is the stable project interface:
 
-```bash
-make check
-```
+| Command | Purpose |
+| --- | --- |
+| `make check` | Fast backend/frontend lint, format, type, and unit checks |
+| `make verify` | Backend integration/E2E tests and frontend production build |
+| `make test` | All current backend and frontend tests |
+| `make build` | Frontend production build |
+| `make docker-build` | Validate Compose and build container images |
+| `make docker-check` | Build, start, health-check, smoke-check, and clean up Compose |
+| `make ci` | Full `check + verify + docker-check` path for GitHub Actions |
 
-Run the complete CI-equivalent suite, including the Docker Compose smoke-check:
-
-```bash
-make ci
-```
+Use `make check` in the regular development loop. Run `make verify` after it
+when a change affects integration, E2E behavior, builds, or CI. The heavier
+`make ci` target is intended primarily for GitHub Actions.
 
 Backend:
 
@@ -153,8 +157,15 @@ make build
 
 Automated tests use mocks and local transports; they never make real OpenRouter requests.
 
+GitHub Actions runs the full CI target for Pull Requests and pushes to
+`develop` and `main`. New work starts from `develop` in a task branch and
+returns through a Pull Request; promotion from `develop` to `main` is a
+separate Pull Request.
+
 ## Component documentation
 
+- [Codex development guide](AGENTS.md)
+- [Architecture reference](ARCHITECTURE.md)
 - [Frontend technical documentation](frontend/README.md)
 - [Backend technical documentation](backend/README.md)
 
