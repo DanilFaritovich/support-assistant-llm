@@ -1,32 +1,28 @@
 ---
 name: code-quality
-description: Local code-quality workflow for backend and frontend projects: run safe deterministic auto-fixes before read-only lint/format/type/test checks, expose Makefile fix/check targets, and keep CI verification non-mutating.
+description: Core local quality workflow: safe deterministic auto-fix before targeted read-only validation, stable Make targets, deduplicated checks, and non-mutating CI. Load stack-specific references only when needed.
 ---
 
 # Code Quality Standard
 
-Local agent-driven development should normalize changed code before running read-only quality checks.
+Normalize changed code before read-only quality validation.
 
-The goal is to avoid wasting tool calls on predictable formatting and lint failures that can be fixed automatically.
+The goal is to avoid predictable formatter/linter failures and repeated broad checks.
 
 ## Core workflow
 
-Preferred local flow:
-
 ```text
 implementation
-  -> safe auto-fix
-  -> targeted type/test checks
-  -> targeted fixes
-  -> make check
-  -> optional make verify
+-> safe auto-fix
+-> changed/new targeted type/tests
+-> targeted corrections
+-> make check once
+-> optional make verify
 ```
 
-Do not deliberately run formatting/lint validation first when the configured tools can safely normalize the same code automatically.
+Do not deliberately run a formatter/linter check first when the configured safe fix step can normalize the same code.
 
-## Safe auto-fix phase
-
-Before the normal validation phase, run the project's safe deterministic fix command.
+## Safe auto-fix
 
 Preferred public interface:
 
@@ -34,100 +30,23 @@ Preferred public interface:
 make fix
 ```
 
-For monorepos, the root target may delegate to component targets:
+For monorepos, root `make fix` may delegate to backend/frontend component targets.
 
-```text
-make fix
-  -> backend make fix
-  -> frontend make fix
-```
+Safe fixes may include formatter write mode, safe lint auto-fixes, and import normalization.
 
-The exact implementation depends on the stack.
+Do not enable unsafe semantic rewrites merely to make checks pass.
 
-## Python backend
+Type checkers and tests are validation, not generic auto-fix tools.
 
-For Python projects using Ruff, a typical local fix phase may include:
+## Stack-specific guidance
 
-```text
-ruff check --fix
-ruff format
-```
+For Python/Ruff/mypy/pytest details, read [references/python.md](./references/python.md) only when Python quality tooling is affected.
 
-or equivalent project Make targets.
+For Vue/TypeScript/ESLint/Prettier/Vitest details, read [references/frontend.md](./references/frontend.md) only when frontend quality tooling is affected.
 
-Use safe configured fixes.
+## Public Make targets
 
-Do not enable broad unsafe fixes merely to make checks pass unless the project explicitly allows them.
-
-After auto-fix, run read-only validation such as:
-
-```text
-ruff check
-ruff format --check
-mypy ...
-pytest ...
-```
-
-## Frontend
-
-For Vue/TypeScript projects, use the configured formatter/linter auto-fix commands before read-only checks.
-
-Typical examples may include:
-
-```text
-eslint --fix
-prettier --write
-```
-
-or the equivalent package scripts.
-
-After auto-fix, run read-only validation such as:
-
-```text
-eslint
-prettier --check
-vue-tsc / tsc
-vitest
-```
-
-Preserve the package manager and tools already selected by the project.
-
-## Type checking is not an auto-formatter
-
-Do not pretend that `mypy`, `pyright`, `tsc`, or `vue-tsc` has a general reliable auto-fix mode when it does not.
-
-During implementation, proactively write code with correct types and fix obvious typing issues as part of the edit.
-
-After deterministic formatter/linter fixes, run the smallest relevant type check.
-
-If type checking reports errors:
-
-```text
-type check
-  -> inspect only relevant diagnostics
-  -> edit affected code
-  -> rerun targeted type check
-```
-
-Do not rerun the complete quality pipeline after each type correction.
-
-## Tests are validation, not auto-fix
-
-Tests normally cannot be auto-fixed safely.
-
-Before running tests:
-
-- finish the intended implementation;
-- update the required tests;
-- run safe formatter/linter auto-fix.
-
-Then run the smallest relevant test target.
-
-If a test fails, fix the underlying code/test and rerun only the affected test first.
-
-## Makefile interface
-
-Projects using Makefiles should prefer a clear separation:
+Projects using Makefiles should prefer:
 
 ```text
 make fix
@@ -136,195 +55,46 @@ make verify
 make ci
 ```
 
-Recommended meaning:
+Core meaning:
 
-### `make fix`
+- `make fix`: mutating safe local normalization;
+- `make check`: fast read-only validation;
+- `make verify`: broader read-only verification when justified;
+- `make ci`: full non-mutating CI validation.
 
-Mutating local normalization.
+Component Makefiles should expose equivalent concepts where practical.
 
-May include:
-
-- backend formatter;
-- backend safe lint auto-fix;
-- frontend formatter;
-- frontend safe lint auto-fix.
-
-It should not:
-
-- change business behavior intentionally;
-- run destructive migrations;
-- silently apply unsafe semantic rewrites.
-
-### `make check`
-
-Fast read-only validation.
-
-Typically:
-
-- lint check;
-- format check;
-- static type check;
-- unit tests.
-
-`make check` must not modify tracked source files.
-
-### `make verify`
-
-Broader read-only/local verification when justified.
-
-May include:
-
-- integration tests;
-- build validation;
-- Docker/Compose checks;
-- selected E2E.
-
-### `make ci`
-
-Full CI verification.
-
-It must be suitable for GitHub Actions and should be non-mutating.
-
-## Component Makefiles
-
-When backend and frontend have separate Makefiles, they should expose equivalent concepts where practical.
-
-Example:
-
-```text
-backend/
-  make fix
-  make check
-
-frontend/
-  make fix
-  make check
-
-root/
-  make fix      # delegates to both
-  make check    # delegates to both
-```
-
-Do not duplicate tool configuration in Makefiles; Make targets should call the project's configured tools/package scripts.
+For detailed target semantics, output rules, aggregate deduplication, and CI behavior, read [references/validation-and-ci.md](./references/validation-and-ci.md).
 
 ## Changed-scope optimization
 
-During active development, prefer fixing/checking only the affected component when supported.
+During development, normalize and validate only the affected component/scope when supported.
 
-Examples:
+Use changed/new targeted tests and type checks while editing.
 
-- backend-only change -> backend fix/check;
-- frontend-only change -> frontend fix/check;
-- full-stack change -> both.
+Do not run unrelated expensive suites because another component changed formatting.
 
-Before final commit, run the project's normal root `make fix` when it is cheap and deterministic, followed by `make check`.
+## Deduplicate validation
 
-Do not run unrelated expensive suites merely because formatting changed in another component.
+Know what aggregate targets already include.
 
-## Compact command output
+Do not execute a full unit/integration/E2E suite immediately before an aggregate target that will rerun that same complete suite.
 
-Quality commands should produce the shortest useful output.
+A full suite should normally run only once per validation level after the task stabilizes.
 
-Prefer tool options that:
+## CI rule
 
-- suppress routine success noise;
-- retain errors and diagnostics;
-- avoid verbose progress output;
-- show concise summaries.
+Normal CI is read-only.
 
-For tests, use compact reporters/output where available.
+CI verifies that committed code is already normalized; it must not silently fix source and continue.
 
-For type checking, linting, and formatting, avoid verbose/debug output unless required to diagnose a failure.
+## Completion
 
-Make targets should avoid echoing long command banners when that adds no value. Recipes may use quiet Make conventions such as `@` where appropriate.
+Code-quality validation is ready when:
 
-Do not hide actual diagnostics merely to reduce output.
-
-On failure, increase verbosity only for the failing command and only as much as needed.
-
-## CI must never auto-fix
-
-GitHub Actions is an independent verification layer.
-
-CI should run read-only commands and fail if the repository is not already normalized.
-
-Do not run:
-
-- `ruff check --fix`;
-- `ruff format` in write mode;
-- `eslint --fix`;
-- `prettier --write`;
-
-as the normal CI validation path.
-
-CI should instead use check modes such as:
-
-- `ruff check`;
-- `ruff format --check`;
-- ESLint without `--fix`;
-- `prettier --check`;
-- type checking;
-- tests.
-
-If CI finds a formatting/lint issue, fix it in the task branch and push the corrected code.
-
-## Plan aggregate checks
-
-Before running local validation, understand what the project's public Make targets include.
-
-Do not execute full suites independently and then immediately execute an aggregate target that reruns the same suites.
-
-Use targeted tests/checks while editing, then let the aggregate target provide the single broad pass.
-
-Example:
-
-```text
-changed backend quota tests
--> make fix
--> targeted typecheck / targeted pytest
--> make check
--> make verify only if integration/E2E/infrastructure coverage is required
-```
-
-If `make verify` already includes `make check`, run only `make verify` at the final broad stage unless a prior fast check is useful for failure isolation.
-
-Project Makefiles/AGENTS.md should document target coverage clearly enough that Codex does not need to discover it by repeatedly running commands.
-
-## Avoid redundant validation
-
-Bad local flow:
-
-```text
-format --check
-  -> fails
-format/write
-  -> format --check
-lint
-  -> fails on auto-fixable issue
-lint --fix
-  -> lint
-typecheck
-tests
-```
-
-Preferred local flow:
-
-```text
-make fix
-  -> targeted typecheck/tests
-  -> targeted corrections
-  -> make check once
-```
-
-This reduces predictable failed checks and unnecessary agent/tool usage.
-
-## Completion criteria
-
-Code-quality work is ready for final validation when:
-
-- safe auto-fixes have been applied;
+- safe fixes were applied;
 - changed files are normalized;
 - targeted type/tests pass;
-- `make check` passes without modifying files;
-- broader verification is used only when justified;
-- CI can verify the committed state without applying fixes.
+- the appropriate broad read-only target passes;
+- broader verification runs only when justified;
+- CI can verify the committed state without mutating it.
