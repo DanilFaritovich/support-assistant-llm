@@ -194,16 +194,39 @@ Avoid logging:
 
 Log business events only when they are operationally meaningful.
 
-Prefer structured context:
+Operationally queryable context must be emitted as structured fields when the logging stack supports them. Do not encode identifiers, statuses, durations, counts, or other fields needed for filtering/aggregation only inside the human-readable `message`.
+
+Keep:
+
+- `message` as a stable human-readable description;
+- `event` as a stable machine-readable event name when useful;
+- IDs, statuses, durations, counts, and other queryable context as separate structured fields.
+
+Avoid:
 
 ```python
 logger.info(
-    "Ticket routed",
-    extra={"ticket_id": ticket.id, "department_id": department.id},
+    "Ticket routed: department_id=%d",
+    department.id,
+)
+```
+
+Prefer:
+
+```python
+logger.info(
+    "Ticket routed.",
+    extra={
+        "event": "ticket_routed",
+        "ticket_id": ticket.id,
+        "department_id": department.id,
+    },
 )
 ```
 
 The exact structured-logging library/API may differ.
+
+Do not duplicate the same queryable context only to make the message verbose. The message may summarize the event, while structured fields remain the source for machine filtering and aggregation.
 
 Do not encode large objects or entire model dumps into routine logs.
 

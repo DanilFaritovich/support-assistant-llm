@@ -37,6 +37,35 @@ Potential files include:
 
 Do not continuously rewrite documentation while implementation is changing.
 
+## Commit planning
+
+Before creating commits, inspect the complete task diff using compact Git metadata and identify logically independent change groups.
+
+Prefer atomic commits that are independently understandable and revertable.
+
+Examples of distinct concerns that often deserve separate commits:
+
+- application feature/behavior changes;
+- logging/observability infrastructure;
+- tests;
+- Docker/deployment infrastructure;
+- CI/tooling;
+- documentation;
+- project-local standards synchronization.
+
+Do not split mechanically by file. Files that implement one logical change across several layers should remain in one commit.
+
+Do not combine independently meaningful changes merely because they were requested in the same task or Pull Request.
+
+Before each commit:
+
+1. stage only the files/hunks for one coherent change;
+2. inspect at minimum `git diff --cached --stat` and `git diff --cached --name-status`;
+3. inspect the staged patch when needed to verify the logical boundary;
+4. use a commit message that describes the actual staged change rather than only the overall task/PR.
+
+If one commit intentionally contains several tightly coupled changes, its message must describe that combined scope.
+
 ## Commit and push
 
 Stage only files belonging to the task.
@@ -48,7 +77,7 @@ Never include:
 - unrelated untracked files;
 - accidental generated artifacts.
 
-Create a clear commit and push only the task branch.
+Create the planned logical commits, then push only the task branch.
 
 ## Push authentication failures
 

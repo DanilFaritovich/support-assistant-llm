@@ -46,8 +46,8 @@ class TicketDraftingService:
             raise ValueError("Description template must not be empty.")
 
         logger.debug(
-            "Starting ticket drafting: department_id=%d.",
-            department.id,
+            "Starting ticket drafting.",
+            extra={"department_id": department.id},
         )
 
         result = await self._ticket_drafting.draft(
@@ -57,8 +57,11 @@ class TicketDraftingService:
         )
 
         logger.info(
-            "Ticket drafting completed successfully: department_id=%d.",
-            department.id,
+            "Ticket drafting completed successfully.",
+            extra={
+                "event": "ticket_drafting_completed",
+                "department_id": department.id,
+            },
         )
 
         return result

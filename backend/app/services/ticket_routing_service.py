@@ -51,8 +51,8 @@ class TicketRoutingService:
         await self._llm_quota.consume(client_id)
 
         logger.debug(
-            "Starting ticket routing: departments_count=%d.",
-            len(departments),
+            "Starting ticket routing.",
+            extra={"departments_count": len(departments)},
         )
 
         result = await self._ticket_routing.route(
@@ -61,8 +61,11 @@ class TicketRoutingService:
         )
 
         logger.info(
-            "Ticket routing completed successfully: department_id=%d.",
-            result.department_id,
+            "Ticket routing completed successfully.",
+            extra={
+                "event": "ticket_routing_completed",
+                "department_id": result.department_id,
+            },
         )
 
         return result

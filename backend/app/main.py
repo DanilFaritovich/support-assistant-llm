@@ -96,8 +96,11 @@ async def handle_llm_error(
 ) -> JSONResponse:
     """Return a safe HTTP response when LLM processing fails."""
     logger.warning(
-        "Ticket processing failed: error_type=%s.",
-        type(exc).__name__,
+        "Ticket processing failed.",
+        extra={
+            "event": "ticket_processing_failed",
+            "error_type": type(exc).__name__,
+        },
     )
 
     return JSONResponse(

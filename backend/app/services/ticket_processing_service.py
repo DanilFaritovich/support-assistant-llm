@@ -58,8 +58,8 @@ class TicketProcessingService:
             raise ValueError("Description template must not be empty.")
 
         logger.debug(
-            "Starting ticket description generation: department_id=%d.",
-            department_id,
+            "Starting ticket description generation.",
+            extra={"department_id": department_id},
         )
 
         department = await self._department_service.get_by_id(
@@ -79,8 +79,11 @@ class TicketProcessingService:
         )
 
         logger.info(
-            "Ticket description generated successfully: department_id=%d.",
-            department_id,
+            "Ticket description generated successfully.",
+            extra={
+                "event": "ticket_description_generated",
+                "department_id": department_id,
+            },
         )
 
         return result
