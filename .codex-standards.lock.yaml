@@ -2,7 +2,7 @@ version: 1
 
 source:
   repository: https://github.com/DanilFaritovich/codex-development-standards
-  ref: 20cdbd1a20ee9c2c7f90bfb0603b87495bd93cb4
+  ref: afc45ecd1c8b2ea33c2c3839b6291ad059b802c6
 
 profile:
   name: fastapi-vue-clean
@@ -25,4 +25,5 @@ skills:
   - documentation
   - licensing
 
-optional_skills: []
+optional_skills:
+  - continuous-delivery
