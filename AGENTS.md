@@ -31,6 +31,9 @@ initial installation, and load only changed or newly applicable skills.
 - `backend/tests/{unit,integration,e2e}`: backend tests by scope.
 - `frontend/src`: Vue application, API client, types, demo data, and tests.
 - `.github/workflows`: CI entry points; project commands remain in Makefiles.
+- `compose.production.yml`, `deploy`, `docs/deployment.md`: production CD
+  foundation, server-side orchestration, and the external infrastructure
+  contract.
 - `.agents/skills`: locked project-local development standards used by Codex.
 
 Main entry points are `backend/app/main.py`, `backend/app/composition.py`,
@@ -79,6 +82,11 @@ make `frontend/Makefile` a thin wrapper. The root Makefile only orchestrates.
 - `make test`: all current backend and frontend tests.
 - `make docker-build`, `make health`, `make docker-check`: explicit
   container validation; `docker-check` always performs cleanup.
+- `make production-config`: validate the production Compose contract without
+  production credentials.
+- `make production-deploy`, `make production-migrate`,
+  `make production-health`: VDS operations that require the documented runtime
+  state and must not be used as local fake deployment checks.
 - `make ci`: complete CI path; normally leave it to GitHub Actions.
 
 Use scoped component targets during development. After a failure, diagnose it,
@@ -112,6 +120,10 @@ provides it through an isolated Redis service.
 GitHub Actions runs `make ci` for PRs and pushes targeting `develop` or
 `main`. Keep CI orchestration in Makefiles rather than duplicating tool
 commands in workflow YAML.
+
+The production workflow publishes immutable images and deploys only from
+`main` through the protected `production` Environment. Pull Requests validate
+deployment artifacts but never receive production secrets or deploy to a VDS.
 
 ## Documentation and context
 

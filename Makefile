@@ -1,6 +1,7 @@
 .PHONY: backend-fix frontend-fix fix backend-check frontend-check \
 	backend-integration-test backend-e2e-test test check build docker-build health \
-	edge-rate-limit-smoke docker-check verify ci
+	edge-rate-limit-smoke docker-check production-config production-deploy \
+	production-migrate production-health verify ci
 
 BACKEND_PYTHON ?= .venv/bin/python
 
@@ -65,6 +66,27 @@ docker-check:
 	$(MAKE) edge-rate-limit-smoke; \
 	printf '\n'
 
-verify: backend-integration-test backend-e2e-test build
+production-config:
+	@BACKEND_IMAGE=ghcr.io/example/support-assistant-backend:foundation \
+		FRONTEND_IMAGE=ghcr.io/example/support-assistant-frontend:foundation \
+		PRODUCTION_ENV_FILE=.env.example \
+		PROXY_NETWORK=support-assistant-proxy \
+		TRUSTED_PROXY_CIDR=172.31.0.0/16 \
+		docker compose --env-file .env.example \
+			-f compose.production.yml config --quiet
+	@printf 'Production Compose config: OK\n'
+
+production-deploy:
+	@test -n "$(BACKEND_IMAGE)" || (printf 'BACKEND_IMAGE is required\n' >&2; exit 2)
+	@test -n "$(FRONTEND_IMAGE)" || (printf 'FRONTEND_IMAGE is required\n' >&2; exit 2)
+	@sh ./deploy/production.sh deploy "$(BACKEND_IMAGE)" "$(FRONTEND_IMAGE)"
+
+production-migrate:
+	@sh ./deploy/production.sh migrate
+
+production-health:
+	@sh ./deploy/production.sh health
+
+verify: backend-integration-test backend-e2e-test build production-config
 
 ci: check verify docker-check

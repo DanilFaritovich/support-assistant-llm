@@ -1,6 +1,9 @@
 .env
 .env.*
 !.env.example
+.deployment.env
+.images.env
+.images.previous.env
 .venv/
 __pycache__/
 .pytest_cache/

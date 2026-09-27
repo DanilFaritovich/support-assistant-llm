@@ -1,3 +1,5 @@
+name: support-assistant
+
 services:
   redis:
     image: redis:8.8.3-alpine
@@ -10,35 +12,34 @@ services:
       timeout: 3s
       retries: 5
     networks:
-      default:
-        ipv4_address: 172.30.0.4
+      application:
+        ipv4_address: 172.31.0.4
     restart: unless-stopped
 
   migrate:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
+    image: ${BACKEND_IMAGE}
     env_file:
-      - path: ./.env
-        required: false
-    environment:
-      DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
-    volumes:
-      - support-assistant-data:/app/data
-    command: ["python", "-m", "alembic", "upgrade", "head"]
-    restart: "no"
-
-  backend:
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    env_file:
-      - path: ./.env
-        required: false
+      - path: ${PRODUCTION_ENV_FILE:-.env}
+        required: true
     environment:
       DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
       REDIS_URL: redis://redis:6379/0
-      FORWARDED_ALLOW_IPS: 172.30.0.3
+    volumes:
+      - support-assistant-data:/app/data
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    networks:
+      - application
+    restart: "no"
+
+  backend:
+    image: ${BACKEND_IMAGE}
+    env_file:
+      - path: ${PRODUCTION_ENV_FILE:-.env}
+        required: true
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
+      REDIS_URL: redis://redis:6379/0
+      FORWARDED_ALLOW_IPS: 172.31.0.3
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -49,8 +50,8 @@ services:
     expose:
       - "8000"
     networks:
-      default:
-        ipv4_address: 172.30.0.2
+      application:
+        ipv4_address: 172.31.0.2
     healthcheck:
       test:
         [
@@ -66,19 +67,18 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "127.0.0.1:8080:80"
+    image: ${FRONTEND_IMAGE}
+    environment:
+      TRUSTED_PROXY_CIDR: ${TRUSTED_PROXY_CIDR}
     depends_on:
       backend:
         condition: service_healthy
-    environment:
-      TRUSTED_PROXY_CIDR: 127.0.0.1/32
     networks:
-      default:
-        ipv4_address: 172.30.0.3
+      application:
+        ipv4_address: 172.31.0.3
+      proxy:
+        aliases:
+          - support-assistant-frontend
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
       interval: 15s
@@ -88,11 +88,14 @@ services:
     restart: unless-stopped
 
 networks:
-  default:
-    name: support-assistant-network
+  application:
+    internal: true
     ipam:
       config:
-        - subnet: 172.30.0.0/24
+        - subnet: 172.31.0.0/24
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK}
 
 volumes:
   support-assistant-data:

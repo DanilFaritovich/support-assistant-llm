@@ -62,8 +62,9 @@ Support Assistant — публичное демонстрационное при
 
 Nginx применяет общий IP anti-flood и ограничение тела запроса 16 КиБ для
 `/api/`. Отдельная общая LLM quota хранится в Redis. Именованную сеть
-`support-assistant-network` впоследствии можно подключить к внешнему reverse
-proxy. Интеграция с ProjectRouter и Caddy пока не реализована.
+`support-assistant-network` можно подключить к внешнему reverse proxy. В
+production используются отдельная внутренняя сеть приложения и явно заданная
+внешняя proxy-сеть; сам proxy остаётся инфраструктурой VDS.
 
 ## Запуск через Docker Compose
 
@@ -147,11 +148,15 @@ Backend пишет JSON Lines в stdout и добавляет сгенериро
 | --- | --- |
 | `make fix` | Безопасные автоисправления lint и форматирования backend/frontend |
 | `make check` | Быстрые lint, format, type и unit-проверки backend/frontend |
-| `make verify` | Integration/E2E-тесты backend и production build frontend |
+| `make verify` | Integration/E2E-тесты backend, production build frontend и проверка production Compose |
 | `make test` | Все существующие тесты backend и frontend |
 | `make build` | Production build frontend |
 | `make docker-build` | Проверка Compose и сборка образов |
 | `make docker-check` | Сборка, запуск, health/smoke-check и cleanup Compose |
+| `make production-config` | Проверка production Compose без настоящих secrets |
+| `make production-deploy` | Деплой переданных immutable GHCR digest на настроенный VDS |
+| `make production-migrate` | Явный запуск production-миграции Alembic |
+| `make production-health` | Проверка health-маршрута gateway и backend |
 | `make ci` | Полный путь `check + verify + docker-check` для GitHub Actions |
 
 Перед read-only проверками выполняйте `make fix`, затем в обычном цикле
@@ -186,10 +191,23 @@ GitHub Actions выполняет полный CI для Pull Request и push в
 через Pull Request; перенос изменений из `develop` в `main` выполняется
 отдельным Pull Request.
 
+## Основа Continuous Delivery
+
+В репозитории подготовлены production Compose, публикация immutable-образов в
+GHCR, явные migration/health hooks и контракт защищённого GitHub Environment
+`production`. Push в `main` сможет собрать два application image и развернуть
+их точные digest после настройки внешнего VDS и Environment.
+
+Это только repository foundation: сервер, production credentials и runtime
+secrets не добавлены, реальный production deployment не проверялся. Требуемые
+GitHub inputs, одноразовая настройка VDS, порядок деплоя и границы recovery
+описаны в [production deployment contract](docs/deployment.md).
+
 ## Документация компонентов
 
 - [Инструкции для Codex](AGENTS.md)
 - [Описание архитектуры](ARCHITECTURE.md)
+- [Контракт production deployment](docs/deployment.md)
 - [Техническая документация frontend](frontend/README.md)
 - [Техническая документация backend](backend/README.md)
 

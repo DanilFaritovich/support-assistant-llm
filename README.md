@@ -63,8 +63,9 @@ Browser -> Nginx/Vue -> FastAPI routes -> application services
 Nginx applies a general per-IP anti-flood policy and a 16 KiB request-body
 limit to `/api/`. The application separately enforces the shared LLM quota in
 Redis. The named Compose network (`support-assistant-network`) can later be
-attached to an external reverse proxy. No ProjectRouter or Caddy integration is
-included yet.
+attached to an external reverse proxy. Production uses a separate internal
+application network and an explicit external proxy network; the proxy itself
+remains VDS infrastructure.
 
 ## Run with Docker Compose
 
@@ -148,11 +149,15 @@ The root Makefile is the stable project interface:
 | --- | --- |
 | `make fix` | Apply safe backend/frontend lint and formatting fixes |
 | `make check` | Fast backend/frontend lint, format, type, and unit checks |
-| `make verify` | Backend integration/E2E tests and frontend production build |
+| `make verify` | Backend integration/E2E tests, frontend production build, and production Compose validation |
 | `make test` | All current backend and frontend tests |
 | `make build` | Frontend production build |
 | `make docker-build` | Validate Compose and build container images |
 | `make docker-check` | Build, start, health-check, smoke-check, and clean up Compose |
+| `make production-config` | Validate the secret-free production Compose contract |
+| `make production-deploy` | Deploy supplied immutable GHCR image digests on a configured VDS |
+| `make production-migrate` | Run the explicit production Alembic migration hook |
+| `make production-health` | Check the deployed gateway and backend health path |
 | `make ci` | Full `check + verify + docker-check` path for GitHub Actions |
 
 Run `make fix` before read-only validation, then use `make check` in the regular
@@ -187,10 +192,24 @@ GitHub Actions runs the full CI target for Pull Requests and pushes to
 returns through a Pull Request; promotion from `develop` to `main` is a
 separate Pull Request.
 
+## Continuous Delivery foundation
+
+The repository contains a production Compose definition, immutable GHCR image
+publishing, explicit migration and bounded health hooks, and a protected
+GitHub `production` Environment contract. A push to `main` can build the two
+application images and deploy their exact digests after the external VDS and
+Environment prerequisites have been configured.
+
+This is the repository foundation only: no server, production credential, or
+runtime secret is included, and no production deployment has been verified.
+See the [production deployment contract](docs/deployment.md) for the required
+GitHub inputs, one-time VDS setup, deployment sequence, and recovery boundary.
+
 ## Component documentation
 
 - [Codex development guide](AGENTS.md)
 - [Architecture reference](ARCHITECTURE.md)
+- [Production deployment contract](docs/deployment.md)
 - [Frontend technical documentation](frontend/README.md)
 - [Backend technical documentation](backend/README.md)
 

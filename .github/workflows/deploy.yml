@@ -1,0 +1,203 @@
+name: Deploy production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish-images:
+    name: Publish production images
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend-image: ${{ steps.image-refs.outputs.backend }}
+      frontend-image: ${{ steps.image-refs.outputs.frontend }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image names
+        id: image-names
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repository="${GITHUB_REPOSITORY#*/}"
+          repository="${repository,,}"
+          echo "backend=ghcr.io/${owner}/${repository}-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${owner}/${repository}-frontend" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish backend image
+        id: backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.image-names.outputs.backend }}:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build and publish frontend image
+        id: frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ steps.image-names.outputs.frontend }}:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Resolve immutable image references
+        id: image-refs
+        env:
+          BACKEND_NAME: ${{ steps.image-names.outputs.backend }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_NAME: ${{ steps.image-names.outputs.frontend }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          echo "backend=${BACKEND_NAME}@${BACKEND_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "frontend=${FRONTEND_NAME}@${FRONTEND_DIGEST}" >> "$GITHUB_OUTPUT"
+
+  deploy-production:
+    name: Deploy to production
+    needs: publish-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          install -m 600 /dev/null ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Validate deployment inputs
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          PROXY_NETWORK: ${{ vars.PROXY_NETWORK }}
+          TRUSTED_PROXY_CIDR: ${{ vars.TRUSTED_PROXY_CIDR }}
+        run: |
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_PATH"
+          test -n "$PRODUCTION_URL"
+          test -n "$PROXY_NETWORK"
+          test -n "$TRUSTED_PROXY_CIDR"
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/opt/[A-Za-z0-9._/-]+$ ]]
+          [[ "$PRODUCTION_URL" =~ ^https://[^[:space:]]+$ ]]
+          [[ "$PROXY_NETWORK" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]
+          [[ "$TRUSTED_PROXY_CIDR" =~ ^[0-9A-Fa-f.:/]+$ ]]
+
+      - name: Synchronize deployment artifacts
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          test -n "$PRODUCTION_ENV_FILE"
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "mkdir -p '${DEPLOY_PATH}/deploy'"
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/deploy_key \
+            compose.production.yml Makefile "${target}:${DEPLOY_PATH}/"
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/deploy_key \
+            deploy/production.sh "${target}:${DEPLOY_PATH}/deploy/production.sh"
+
+      - name: Install runtime configuration
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+          PROXY_NETWORK: ${{ vars.PROXY_NETWORK }}
+          TRUSTED_PROXY_CIDR: ${{ vars.TRUSTED_PROXY_CIDR }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          printf '%s' "$PRODUCTION_ENV_FILE" | \
+            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+              "umask 077; cat > '${DEPLOY_PATH}/.env'"
+          printf 'PROXY_NETWORK=%s\nTRUSTED_PROXY_CIDR=%s\n' \
+            "$PROXY_NETWORK" "$TRUSTED_PROXY_CIDR" | \
+            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+              "cat > '${DEPLOY_PATH}/.deployment.env'"
+
+      - name: Deploy immutable images
+        env:
+          BACKEND_IMAGE: ${{ needs.publish-images.outputs.backend-image }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          FRONTEND_IMAGE: ${{ needs.publish-images.outputs.frontend-image }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "cd '${DEPLOY_PATH}' && sh ./deploy/production.sh deploy '${BACKEND_IMAGE}' '${FRONTEND_IMAGE}'"
+
+      - name: Verify public health
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          health_url="${PRODUCTION_URL%/}/api/health"
+          attempt=1
+          while [ "$attempt" -le 20 ]; do
+            if curl --fail --silent --max-time 5 "$health_url" | \
+              grep -q '"status":"ok"'; then
+              echo "Public health: OK"
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            sleep 3
+          done
+          echo "Public health check timed out" >&2
+          exit 1

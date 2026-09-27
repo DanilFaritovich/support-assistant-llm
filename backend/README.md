@@ -98,7 +98,7 @@ FastAPI also generates OpenAPI at `/openapi.json` and Swagger UI at `/docs`.
 
 ## Database and migrations
 
-The default non-container database is `backend/data/app.db`. Docker Compose overrides it with `/app/data/app.db` on a named volume. The container runs `alembic upgrade head` before Uvicorn.
+The default non-container database is `backend/data/app.db`. Docker Compose overrides it with `/app/data/app.db` on a named volume. Compose runs `alembic upgrade head` as an explicit one-shot migration service before Uvicorn starts; the backend image itself starts only the application server.
 
 The initial migration creates the unique department table from `resources/departments.json`. On every startup, `seed_demo_departments` adds only names that do not already exist. Existing records are never overwritten, and repeated startup creates no duplicates.
 
