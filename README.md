@@ -149,15 +149,17 @@ The root Makefile is the stable project interface:
 | --- | --- |
 | `make fix` | Apply safe backend/frontend lint and formatting fixes |
 | `make check` | Fast backend/frontend lint, format, type, and unit checks |
-| `make verify` | Backend integration/E2E tests, frontend production build, and production Compose validation |
+| `make verify` | Integration/E2E tests, frontend build, and deterministic deployment validation |
 | `make test` | All current backend and frontend tests |
 | `make build` | Frontend production build |
 | `make docker-build` | Validate Compose and build container images |
 | `make docker-check` | Build, start, health-check, smoke-check, and clean up Compose |
 | `make production-config` | Validate the secret-free production Compose contract |
+| `make deployment-check` | Run pinned `actionlint`, `shellcheck`, and production Compose validation |
 | `make production-deploy` | Deploy supplied immutable GHCR image digests on a configured VDS |
 | `make production-migrate` | Run the explicit production Alembic migration hook |
 | `make production-health` | Check the deployed gateway and backend health path |
+| `make production-restore-images` | Restore last-known-good image references without changing services |
 | `make ci` | Full `check + verify + docker-check` path for GitHub Actions |
 
 Run `make fix` before read-only validation, then use `make check` in the regular
@@ -196,9 +198,11 @@ separate Pull Request.
 
 The repository contains a production Compose definition, immutable GHCR image
 publishing, explicit migration and bounded health hooks, and a protected
-GitHub `production` Environment contract. A push to `main` can build the two
-application images and deploy their exact digests after the external VDS and
-Environment prerequisites have been configured.
+GitHub `production` Environment contract. A manually dispatched workflow for
+`main` can build the two application images.
+That workflow first runs the reusable CI checks for the exact commit, then can
+publish and deploy its exact digests after the external VDS and Environment
+prerequisites have been configured.
 
 This is the repository foundation only: no server, production credential, or
 runtime secret is included, and no production deployment has been verified.

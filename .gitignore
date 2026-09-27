@@ -3,7 +3,8 @@
 !.env.example
 .deployment.env
 .images.env
-.images.previous.env
+.images.last-known-good.env
+.last-known-good-revision
 .venv/
 __pycache__/
 .pytest_cache/

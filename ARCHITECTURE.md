@@ -165,17 +165,21 @@ before backend startup.
 `compose.production.yml` consumes externally built backend/frontend image
 references, keeps Redis/backend/SQLite on an internal network, and attaches
 only frontend/Nginx to a pre-existing external proxy network. Nginx trusts only
-the configured proxy CIDR before using forwarded client addresses; Uvicorn
-trusts only the fixed internal Nginx address.
+the configured reverse-proxy IP before using forwarded client addresses;
+Uvicorn trusts only the configured internal Nginx address. The private subnet
+and Nginx address are explicit production inputs so they can be selected around
+existing VDS networks instead of assuming one universal fixed range.
 
-The production workflow runs only for `main`. GitHub Actions publishes
-commit-tagged GHCR images, captures immutable digests, and passes those exact
-references to a protected `production` Environment deployment. Versioned
-deployment logic validates Compose, persists runtime/image state on the VDS,
-stops backend for the SQLite migration, waits for container health, and then
-checks the public gateway. VDS, SSH, DNS/TLS, proxy, GHCR access, and runtime
-secrets remain external prerequisites; the foundation does not claim a verified
-production deployment.
+The production workflow is manually dispatched only for `main` and calls the
+reusable CI workflow before publishing or deploying that exact revision.
+GitHub Actions publishes commit-tagged GHCR images, captures immutable digests,
+and passes those exact references to a protected `production` Environment.
+Versioned deployment logic validates staged runtime files before atomically
+replacing their live counterparts, creates a unique SQLite backup before the
+explicit migration, waits for container and public health, and only then marks
+the deployed images as last-known-good. VDS, SSH, DNS/TLS, proxy, GHCR access,
+and runtime secrets remain external prerequisites; the foundation does not
+claim a verified production deployment.
 
 ## Verification boundaries
 

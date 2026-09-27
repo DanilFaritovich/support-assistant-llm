@@ -12,10 +12,12 @@ external setup and the first controlled deployment have succeeded.
 
 ## Release and artifact flow
 
-The production workflow runs only for the trusted `main` branch:
+The foundation workflow is manual and accepts only the trusted `main` branch:
 
 ```text
 develop -> reviewed Pull Request -> main
+  -> manual workflow dispatch
+  -> reusable CI for the exact main commit
   -> build backend and frontend images in GitHub Actions
   -> publish commit-SHA tags to GHCR
   -> resolve immutable image digests
@@ -38,13 +40,15 @@ Environment variables:
 
 | Name | Example shape | Purpose |
 | --- | --- | --- |
+| `APPLICATION_SUBNET` | `172.31.0.0/24` | Dedicated private subnet selected to avoid existing VDS networks |
 | `DEPLOY_HOST` | `support.example.com` | SSH host or address |
 | `DEPLOY_PORT` | `22` | SSH port |
 | `DEPLOY_USER` | `support-deploy` | Dedicated non-root deployment user |
 | `DEPLOY_PATH` | `/opt/support-assistant` | Stable server directory |
+| `FRONTEND_INTERNAL_IP` | `172.31.0.3` | Nginx address inside `APPLICATION_SUBNET`, trusted by Uvicorn |
 | `PRODUCTION_URL` | `https://support.example.com` | Public health-check origin |
 | `PROXY_NETWORK` | `project-router` | Existing external Docker proxy network |
-| `TRUSTED_PROXY_CIDR` | `172.20.0.0/16` | Exact Docker subnet trusted by Nginx |
+| `TRUSTED_PROXY_IP` | `172.20.0.2` | Exact reverse-proxy container address trusted by Nginx |
 
 Environment secrets:
 
@@ -70,24 +74,32 @@ Prepare these prerequisites before enabling the workflow:
 
 1. Provision a supported Linux VDS with Docker Engine and a recent Docker
    Compose v2 plugin that supports `up --wait` and `--wait-timeout`.
-2. Create a dedicated non-root deployment user with key-based SSH access and
-   permission to manage only the required Docker deployment.
+2. Create a dedicated non-root deployment user with key-based SSH access.
+   Access to the host Docker socket or membership in the Docker group normally
+   grants host-equivalent control; the non-root login is not a strong isolation
+   boundary. Use rootless Docker or a constrained deployment service if the
+   threat model requires stronger separation.
 3. Create `/opt/support-assistant` owned by that deployment user.
-4. Create the external Docker network named by `PROXY_NETWORK` and record its
-   exact subnet for `TRUSTED_PROXY_CIDR`.
-5. Configure the public reverse proxy to route the application hostname to the
+4. Inspect existing Docker and host routes. Select a non-conflicting dedicated
+   `APPLICATION_SUBNET` and an unused `FRONTEND_INTERNAL_IP` inside it; do not
+   copy the examples without checking the VDS.
+5. Create the external Docker network named by `PROXY_NETWORK`. Give the public
+   reverse proxy a stable address on that network and record that exact address
+   as `TRUSTED_PROXY_IP`; do not trust the whole shared network subnet.
+6. Configure the public reverse proxy to route the application hostname to the
    `support-assistant-frontend` network alias on port 80 and to forward the
    client address and scheme.
-6. Configure DNS, TLS, and the firewall. Only the public proxy and SSH ports
+7. Configure DNS, TLS, and the firewall. Only the public proxy and SSH ports
    should be reachable; backend and Redis remain internal.
-7. Make the two GHCR packages public, or authenticate the deployment user to
+8. Make the two GHCR packages public, or authenticate the deployment user to
    GHCR once with a read-only package credential if packages remain private.
-8. Capture the VDS SSH host key through a trusted channel and store it in
+9. Capture the VDS SSH host key through a trusted channel and store it in
    `SSH_KNOWN_HOSTS`; never disable host verification.
-9. Populate and protect the GitHub `production` Environment inputs above.
-
-Ensure the fixed `172.31.0.0/24` application subnet in
-`compose.production.yml` does not conflict with existing VDS networks.
+10. Populate and protect the GitHub `production` Environment inputs above.
+11. Keep the workflow manual until the first controlled end-to-end deployment
+    and recovery exercise succeeds. Enabling an automatic `main` trigger is a
+    separate production-integration change and must preserve the exact-SHA CI
+    dependency.
 
 ## Persistent server state
 
@@ -100,21 +112,30 @@ After deployment, the stable directory contains:
 ├── deploy/production.sh         # version-controlled deployment logic
 ├── .env                         # runtime secret, mode constrained by umask
 ├── .deployment.env              # proxy topology variables
-├── .images.env                  # current immutable image references
-└── .images.previous.env         # previous references when available
+├── .images.env                  # current deployment-attempt image references
+├── .images.last-known-good.env  # most recent fully healthy image references
+└── .last-known-good-revision    # corresponding repository revision
 ```
 
 SQLite data remains in the `support-assistant-data` Docker volume. Redis quota
-state is intentionally ephemeral.
+state is intentionally ephemeral. Pre-migration SQLite backups are stored in
+that volume under `/app/data/backups/app.db.before-<backup-id>`; backup IDs are
+unique per workflow run and retry.
 
 ## Deployment behavior
 
-The deploy script validates both image references as GHCR digests, preserves
-the previous image file, validates Compose, pulls required images, and starts
-Redis. It then stops the backend before running the one-shot Alembic migration,
-starts backend/frontend with bounded health waits, and verifies `/api/health`
-through Nginx. GitHub Actions performs a second bounded check through
-`PRODUCTION_URL` before reporting success.
+The workflow writes repository and runtime files only into a per-run staging
+directory. It validates the staged Compose definition, prepares all live-file
+replacements, and renames each replacement into place on the same filesystem;
+an interrupted transfer therefore cannot expose a partially written live file.
+
+The deploy script validates both image references as GHCR digests, pulls the
+required images, and starts Redis. It stops the backend, creates and integrity-
+checks a unique SQLite backup, and only then runs the one-shot Alembic migration.
+It starts backend/frontend with bounded health waits and verifies `/api/health`
+through Nginx. GitHub Actions performs a second bounded public check through
+`PRODUCTION_URL`; only after that succeeds does it atomically promote the
+current image references and revision to last-known-good state.
 
 A failed migration fails deployment and leaves the backend stopped. The script
 does not perform an automatic database downgrade or claim that an image rollback
@@ -125,6 +146,7 @@ Operational commands in the stable directory:
 ```bash
 make production-migrate
 make production-health
+make production-restore-images
 make production-deploy \
   BACKEND_IMAGE=ghcr.io/owner/image@sha256:0000000000000000000000000000000000000000000000000000000000000000 \
   FRONTEND_IMAGE=ghcr.io/owner/image@sha256:0000000000000000000000000000000000000000000000000000000000000000
@@ -135,11 +157,19 @@ selection. The Make targets exist for controlled recovery and diagnostics.
 
 ## Recovery boundary
 
-If service replacement fails after a successful migration, inspect service
-health and schema compatibility before restoring old application images. When
-rollback is safe, restore `.images.previous.env`, validate Compose, start the
-services with the three tracked env files, and rerun the gateway/public health
-checks. Never automatically run an Alembic downgrade as part of image rollback.
+If a migration fails, keep the backend stopped. Identify the matching immutable
+backup under `/app/data/backups`, preserve the failed database for diagnosis,
+and restore the selected backup only during an explicit maintenance window.
+Do not overwrite the live database in place while a backend or migration
+container can access it, and never automatically run an Alembic downgrade.
+
+If service replacement fails after a successful migration, first inspect schema
+compatibility. When application rollback is safe, run
+`make production-restore-images`; this atomically restores
+`.images.last-known-good.env` to `.images.env` but deliberately does not change
+services. Then validate Compose, update services, and repeat gateway and public
+health checks. A failed retry never overwrites last-known-good state; promotion
+occurs only after both health layers pass.
 
 The first real deployment belongs to the production-integration phase. Verify
 SSH host checking, GHCR access, runtime file ownership, migration behavior,
@@ -151,8 +181,7 @@ recovery procedure during that controlled deployment.
 Without production access, validate the foundation with:
 
 ```bash
-sh -n deploy/production.sh
-make production-config
+make deployment-script-test
 make check
 make verify
 make docker-check

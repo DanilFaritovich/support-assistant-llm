@@ -1,9 +1,6 @@
 name: Deploy production
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
 
 concurrency:
@@ -14,9 +11,16 @@ permissions:
   contents: read
 
 jobs:
+  validate-revision:
+    name: Validate production revision
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   publish-images:
     name: Publish production images
-    if: github.ref == 'refs/heads/main'
+    needs: validate-revision
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -113,76 +117,131 @@ jobs:
 
       - name: Validate deployment inputs
         env:
+          APPLICATION_SUBNET: ${{ vars.APPLICATION_SUBNET }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          FRONTEND_INTERNAL_IP: ${{ vars.FRONTEND_INTERNAL_IP }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
           PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
           PROXY_NETWORK: ${{ vars.PROXY_NETWORK }}
-          TRUSTED_PROXY_CIDR: ${{ vars.TRUSTED_PROXY_CIDR }}
+          TRUSTED_PROXY_IP: ${{ vars.TRUSTED_PROXY_IP }}
         run: |
+          test -n "$APPLICATION_SUBNET"
           test -n "$DEPLOY_HOST"
           test -n "$DEPLOY_USER"
           test -n "$DEPLOY_PORT"
           test -n "$DEPLOY_PATH"
+          test -n "$FRONTEND_INTERNAL_IP"
+          test -n "$PRODUCTION_ENV_FILE"
           test -n "$PRODUCTION_URL"
           test -n "$PROXY_NETWORK"
-          test -n "$TRUSTED_PROXY_CIDR"
+          test -n "$TRUSTED_PROXY_IP"
           [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
           [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
           [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
-          [[ "$DEPLOY_PATH" =~ ^/opt/[A-Za-z0-9._/-]+$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/opt/[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$ ]]
           [[ "$PRODUCTION_URL" =~ ^https://[^[:space:]]+$ ]]
           [[ "$PROXY_NETWORK" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]
-          [[ "$TRUSTED_PROXY_CIDR" =~ ^[0-9A-Fa-f.:/]+$ ]]
+          python3 - "$APPLICATION_SUBNET" "$FRONTEND_INTERNAL_IP" \
+            "$TRUSTED_PROXY_IP" <<'PY'
+          import ipaddress
+          import sys
 
-      - name: Synchronize deployment artifacts
+          network = ipaddress.ip_network(sys.argv[1], strict=True)
+          frontend_ip = ipaddress.ip_address(sys.argv[2])
+          ipaddress.ip_address(sys.argv[3])
+          if frontend_ip not in network:
+              raise SystemExit("FRONTEND_INTERNAL_IP is outside APPLICATION_SUBNET")
+          PY
+
+      - name: Stage deployment artifacts
+        id: stage
         env:
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
         run: |
-          test -n "$PRODUCTION_ENV_FILE"
           target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_stage="${DEPLOY_PATH}/.incoming-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
-            "mkdir -p '${DEPLOY_PATH}/deploy'"
+            "test ! -e '${remote_stage}' && install -d -m 700 '${remote_stage}/deploy'"
           scp -P "$DEPLOY_PORT" -i ~/.ssh/deploy_key \
-            compose.production.yml Makefile "${target}:${DEPLOY_PATH}/"
+            compose.production.yml Makefile "${target}:${remote_stage}/"
           scp -P "$DEPLOY_PORT" -i ~/.ssh/deploy_key \
-            deploy/production.sh "${target}:${DEPLOY_PATH}/deploy/production.sh"
+            deploy/install-release.sh deploy/production.sh \
+            "${target}:${remote_stage}/deploy/"
 
-      - name: Install runtime configuration
+      - name: Stage runtime configuration
         env:
-          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
-          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
-          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
-          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
-          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
-          PROXY_NETWORK: ${{ vars.PROXY_NETWORK }}
-          TRUSTED_PROXY_CIDR: ${{ vars.TRUSTED_PROXY_CIDR }}
-        run: |
-          target="${DEPLOY_USER}@${DEPLOY_HOST}"
-          printf '%s' "$PRODUCTION_ENV_FILE" | \
-            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
-              "umask 077; cat > '${DEPLOY_PATH}/.env'"
-          printf 'PROXY_NETWORK=%s\nTRUSTED_PROXY_CIDR=%s\n' \
-            "$PROXY_NETWORK" "$TRUSTED_PROXY_CIDR" | \
-            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
-              "cat > '${DEPLOY_PATH}/.deployment.env'"
-
-      - name: Deploy immutable images
-        env:
+          APPLICATION_SUBNET: ${{ vars.APPLICATION_SUBNET }}
           BACKEND_IMAGE: ${{ needs.publish-images.outputs.backend-image }}
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER }}
           FRONTEND_IMAGE: ${{ needs.publish-images.outputs.frontend-image }}
+          FRONTEND_INTERNAL_IP: ${{ vars.FRONTEND_INTERNAL_IP }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+          PROXY_NETWORK: ${{ vars.PROXY_NETWORK }}
+          TRUSTED_PROXY_IP: ${{ vars.TRUSTED_PROXY_IP }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_stage="${DEPLOY_PATH}/.incoming-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s' "$PRODUCTION_ENV_FILE" | \
+            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+              "umask 077; cat > '${remote_stage}/.env'"
+          printf '%s\n' \
+            "APPLICATION_SUBNET=${APPLICATION_SUBNET}" \
+            "BACKUP_ID=${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "DEPLOYMENT_ID=${GITHUB_SHA}" \
+            "FRONTEND_INTERNAL_IP=${FRONTEND_INTERNAL_IP}" \
+            "PROXY_NETWORK=${PROXY_NETWORK}" \
+            "TRUSTED_PROXY_IP=${TRUSTED_PROXY_IP}" | \
+            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+              "umask 077; cat > '${remote_stage}/.deployment.env'"
+          printf 'BACKEND_IMAGE=%s\nFRONTEND_IMAGE=%s\n' \
+            "$BACKEND_IMAGE" "$FRONTEND_IMAGE" | \
+            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+              "umask 077; cat > '${remote_stage}/.images.env'"
+
+      - name: Validate and activate staged files
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_stage="${DEPLOY_PATH}/.incoming-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "sh '${remote_stage}/deploy/install-release.sh' '${remote_stage}' '${DEPLOY_PATH}'"
+
+      - name: Remove staged files
+        if: always() && steps.stage.outcome != 'skipped'
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_stage="${DEPLOY_PATH}/.incoming-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "rm -rf -- '${remote_stage}'"
+
+      - name: Deploy immutable images
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
         run: |
           target="${DEPLOY_USER}@${DEPLOY_HOST}"
           ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
-            "cd '${DEPLOY_PATH}' && sh ./deploy/production.sh deploy '${BACKEND_IMAGE}' '${FRONTEND_IMAGE}'"
+            "cd '${DEPLOY_PATH}' && sh ./deploy/production.sh deploy-current"
 
       - name: Verify public health
         env:
@@ -201,3 +260,14 @@ jobs:
           done
           echo "Public health check timed out" >&2
           exit 1
+
+      - name: Record last-known-good deployment
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "cd '${DEPLOY_PATH}' && sh ./deploy/production.sh mark-healthy '${GITHUB_SHA}'"

@@ -148,15 +148,17 @@ Backend пишет JSON Lines в stdout и добавляет сгенериро
 | --- | --- |
 | `make fix` | Безопасные автоисправления lint и форматирования backend/frontend |
 | `make check` | Быстрые lint, format, type и unit-проверки backend/frontend |
-| `make verify` | Integration/E2E-тесты backend, production build frontend и проверка production Compose |
+| `make verify` | Integration/E2E-тесты, build frontend и детерминированные deployment-проверки |
 | `make test` | Все существующие тесты backend и frontend |
 | `make build` | Production build frontend |
 | `make docker-build` | Проверка Compose и сборка образов |
 | `make docker-check` | Сборка, запуск, health/smoke-check и cleanup Compose |
 | `make production-config` | Проверка production Compose без настоящих secrets |
+| `make deployment-check` | Pinned `actionlint`, `shellcheck` и проверка production Compose |
 | `make production-deploy` | Деплой переданных immutable GHCR digest на настроенный VDS |
 | `make production-migrate` | Явный запуск production-миграции Alembic |
 | `make production-health` | Проверка health-маршрута gateway и backend |
+| `make production-restore-images` | Восстановление last-known-good image references без изменения services |
 | `make ci` | Полный путь `check + verify + docker-check` для GitHub Actions |
 
 Перед read-only проверками выполняйте `make fix`, затем в обычном цикле
@@ -195,8 +197,9 @@ GitHub Actions выполняет полный CI для Pull Request и push в
 
 В репозитории подготовлены production Compose, публикация immutable-образов в
 GHCR, явные migration/health hooks и контракт защищённого GitHub Environment
-`production`. Push в `main` сможет собрать два application image и развернуть
-их точные digest после настройки внешнего VDS и Environment.
+`production`. Workflow запускается вручную только для `main`, сначала выполняет
+переиспользуемый CI для точного commit, а затем сможет собрать два application
+image и развернуть их точные digest после настройки внешнего VDS и Environment.
 
 Это только repository foundation: сервер, production credentials и runtime
 secrets не добавлены, реальный production deployment не проверялся. Требуемые

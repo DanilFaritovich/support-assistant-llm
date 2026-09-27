@@ -13,7 +13,7 @@ RUN npm run build
 
 FROM nginx:stable-alpine
 
-ENV TRUSTED_PROXY_CIDR=127.0.0.1/32
+ENV TRUSTED_PROXY_IP=127.0.0.1
 
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 
