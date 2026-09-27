@@ -31,6 +31,9 @@ initial installation, and load only changed or newly applicable skills.
 - `backend/tests/{unit,integration,e2e}`: backend tests by scope.
 - `frontend/src`: Vue application, API client, types, demo data, and tests.
 - `.github/workflows`: CI entry points; project commands remain in Makefiles.
+- `compose.production.yml`, `deploy`, `docs/deployment.md`: production CD
+  foundation, server-side orchestration, and the external infrastructure
+  contract.
 - `.agents/skills`: locked project-local development standards used by Codex.
 
 Main entry points are `backend/app/main.py`, `backend/app/composition.py`,
@@ -74,11 +77,19 @@ make `frontend/Makefile` a thin wrapper. The root Makefile only orchestrates.
 
 - `make fix`: safe backend/frontend lint and formatting auto-fixes.
 - `make check`: fast read-only checks (lint, formatting, typing, unit tests).
-- `make verify`: integration/E2E tests and the production frontend build;
-  run after `make check` when the change warrants it.
+- `make verify`: integration/E2E tests, the production frontend build, and
+  deterministic deployment validation; run after `make check` when warranted.
 - `make test`: all current backend and frontend tests.
 - `make docker-build`, `make health`, `make docker-check`: explicit
   container validation; `docker-check` always performs cleanup.
+- `make production-config`: validate the production Compose contract without
+  production credentials.
+- `make deployment-check`: run pinned workflow/shell validation and production
+  Compose validation without silently skipping unavailable host tools.
+- `make production-deploy`, `make production-migrate`,
+  `make production-health`, `make production-restore-images`: VDS operations
+  that require the documented runtime state and must not be used as local fake
+  deployment checks.
 - `make ci`: complete CI path; normally leave it to GitHub Actions.
 
 Use scoped component targets during development. After a failure, diagnose it,
@@ -112,6 +123,11 @@ provides it through an isolated Redis service.
 GitHub Actions runs `make ci` for PRs and pushes targeting `develop` or
 `main`. Keep CI orchestration in Makefiles rather than duplicating tool
 commands in workflow YAML.
+
+The production workflow is manually dispatched only from `main`, reuses CI for
+the exact revision, and deploys through the protected `production` Environment.
+Pull Requests validate deployment artifacts but never receive production
+secrets or deploy to a VDS.
 
 ## Documentation and context
 

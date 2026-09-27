@@ -48,11 +48,12 @@ OpenRouter implementations.
 
 ### Startup and department directory
 
-The container applies Alembic migrations before starting Uvicorn. Application
-startup creates the async database resources and idempotently adds missing demo
-departments from `backend/resources/departments.json`. Existing rows are not
-overwritten. `GET /api/departments` reads the ordered directory through the
-repository port.
+Compose applies Alembic migrations through an explicit one-shot migration
+service before starting Uvicorn. The backend image does not hide migrations in
+its application command. Application startup creates the async database
+resources and idempotently adds missing demo departments from
+`backend/resources/departments.json`. Existing rows are not overwritten.
+`GET /api/departments` reads the ordered directory through the repository port.
 
 ### Ticket routing
 
@@ -154,15 +155,31 @@ does not contain department master data or OpenRouter configuration.
 
 ## Infrastructure and deployment
 
-Docker Compose defines Redis, a non-root backend service, a multi-stage
-frontend/Nginx service, the private `support-assistant-network`, and the
-persistent SQLite volume. Only Nginx is published to the host, at
-`127.0.0.1:8080`; Redis and the backend remain internal. All services provide
-healthchecks, and backend startup waits for Redis readiness.
+Development Compose defines Redis, an explicit migration service, a non-root
+backend, a multi-stage frontend/Nginx service, the private
+`support-assistant-network`, and the persistent SQLite volume. Only Nginx is
+published to the host at `127.0.0.1:8080`; Redis and backend remain internal.
+Health-aware dependencies require successful migrations and Redis readiness
+before backend startup.
 
-The named network may later be attached to ProjectRouter/Caddy. That deployment
-must pass client addresses only through a trusted proxy chain and configure
-`FORWARDED_ALLOW_IPS` narrowly.
+`compose.production.yml` consumes externally built backend/frontend image
+references, keeps Redis/backend/SQLite on an internal network, and attaches
+only frontend/Nginx to a pre-existing external proxy network. Nginx trusts only
+the configured reverse-proxy IP before using forwarded client addresses;
+Uvicorn trusts only the configured internal Nginx address. The private subnet
+and Nginx address are explicit production inputs so they can be selected around
+existing VDS networks instead of assuming one universal fixed range.
+
+The production workflow is manually dispatched only for `main` and calls the
+reusable CI workflow before publishing or deploying that exact revision.
+GitHub Actions publishes commit-tagged GHCR images, captures immutable digests,
+and passes those exact references to a protected `production` Environment.
+Versioned deployment logic validates staged runtime files before atomically
+replacing their live counterparts, creates a unique SQLite backup before the
+explicit migration, waits for container and public health, and only then marks
+the deployed images as last-known-good. VDS, SSH, DNS/TLS, proxy, GHCR access,
+and runtime secrets remain external prerequisites; the foundation does not
+claim a verified production deployment.
 
 ## Verification boundaries
 

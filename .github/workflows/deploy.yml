@@ -1,0 +1,273 @@
+name: Deploy production
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: production-deployment
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate-revision:
+    name: Validate production revision
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  publish-images:
+    name: Publish production images
+    needs: validate-revision
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      backend-image: ${{ steps.image-refs.outputs.backend }}
+      frontend-image: ${{ steps.image-refs.outputs.frontend }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image names
+        id: image-names
+        shell: bash
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          repository="${GITHUB_REPOSITORY#*/}"
+          repository="${repository,,}"
+          echo "backend=ghcr.io/${owner}/${repository}-backend" >> "$GITHUB_OUTPUT"
+          echo "frontend=ghcr.io/${owner}/${repository}-frontend" >> "$GITHUB_OUTPUT"
+
+      - name: Build and publish backend image
+        id: backend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./backend
+          file: ./backend/Dockerfile
+          push: true
+          tags: ${{ steps.image-names.outputs.backend }}:${{ github.sha }}
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
+
+      - name: Build and publish frontend image
+        id: frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./frontend
+          file: ./frontend/Dockerfile
+          push: true
+          tags: ${{ steps.image-names.outputs.frontend }}:${{ github.sha }}
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Resolve immutable image references
+        id: image-refs
+        env:
+          BACKEND_NAME: ${{ steps.image-names.outputs.backend }}
+          BACKEND_DIGEST: ${{ steps.backend.outputs.digest }}
+          FRONTEND_NAME: ${{ steps.image-names.outputs.frontend }}
+          FRONTEND_DIGEST: ${{ steps.frontend.outputs.digest }}
+        run: |
+          echo "backend=${BACKEND_NAME}@${BACKEND_DIGEST}" >> "$GITHUB_OUTPUT"
+          echo "frontend=${FRONTEND_NAME}@${FRONTEND_DIGEST}" >> "$GITHUB_OUTPUT"
+
+  deploy-production:
+    name: Deploy to production
+    needs: publish-images
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: production
+      url: ${{ vars.PRODUCTION_URL }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          test -n "$DEPLOY_SSH_KEY"
+          test -n "$SSH_KNOWN_HOSTS"
+          install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          install -m 600 /dev/null ~/.ssh/known_hosts
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Validate deployment inputs
+        env:
+          APPLICATION_SUBNET: ${{ vars.APPLICATION_SUBNET }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          FRONTEND_INTERNAL_IP: ${{ vars.FRONTEND_INTERNAL_IP }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+          PROXY_NETWORK: ${{ vars.PROXY_NETWORK }}
+          TRUSTED_PROXY_IP: ${{ vars.TRUSTED_PROXY_IP }}
+        run: |
+          test -n "$APPLICATION_SUBNET"
+          test -n "$DEPLOY_HOST"
+          test -n "$DEPLOY_USER"
+          test -n "$DEPLOY_PORT"
+          test -n "$DEPLOY_PATH"
+          test -n "$FRONTEND_INTERNAL_IP"
+          test -n "$PRODUCTION_ENV_FILE"
+          test -n "$PRODUCTION_URL"
+          test -n "$PROXY_NETWORK"
+          test -n "$TRUSTED_PROXY_IP"
+          [[ "$DEPLOY_HOST" =~ ^[A-Za-z0-9.:-]+$ ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]+$ ]]
+          [[ "$DEPLOY_USER" =~ ^[a-z_][a-z0-9_-]*$ ]]
+          [[ "$DEPLOY_PATH" =~ ^/opt/[A-Za-z0-9][A-Za-z0-9._-]*(/[A-Za-z0-9][A-Za-z0-9._-]*)*$ ]]
+          [[ "$PRODUCTION_URL" =~ ^https://[^[:space:]]+$ ]]
+          [[ "$PROXY_NETWORK" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]
+          python3 - "$APPLICATION_SUBNET" "$FRONTEND_INTERNAL_IP" \
+            "$TRUSTED_PROXY_IP" <<'PY'
+          import ipaddress
+          import sys
+
+          network = ipaddress.ip_network(sys.argv[1], strict=True)
+          frontend_ip = ipaddress.ip_address(sys.argv[2])
+          ipaddress.ip_address(sys.argv[3])
+          if frontend_ip not in network:
+              raise SystemExit("FRONTEND_INTERNAL_IP is outside APPLICATION_SUBNET")
+          PY
+
+      - name: Stage deployment artifacts
+        id: stage
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_stage="${DEPLOY_PATH}/.incoming-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "test ! -e '${remote_stage}' && install -d -m 700 '${remote_stage}/deploy'"
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/deploy_key \
+            compose.production.yml Makefile "${target}:${remote_stage}/"
+          scp -P "$DEPLOY_PORT" -i ~/.ssh/deploy_key \
+            deploy/install-release.sh deploy/production.sh \
+            "${target}:${remote_stage}/deploy/"
+
+      - name: Stage runtime configuration
+        env:
+          APPLICATION_SUBNET: ${{ vars.APPLICATION_SUBNET }}
+          BACKEND_IMAGE: ${{ needs.publish-images.outputs.backend-image }}
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+          FRONTEND_IMAGE: ${{ needs.publish-images.outputs.frontend-image }}
+          FRONTEND_INTERNAL_IP: ${{ vars.FRONTEND_INTERNAL_IP }}
+          PRODUCTION_ENV_FILE: ${{ secrets.PRODUCTION_ENV_FILE }}
+          PROXY_NETWORK: ${{ vars.PROXY_NETWORK }}
+          TRUSTED_PROXY_IP: ${{ vars.TRUSTED_PROXY_IP }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_stage="${DEPLOY_PATH}/.incoming-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          printf '%s' "$PRODUCTION_ENV_FILE" | \
+            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+              "umask 077; cat > '${remote_stage}/.env'"
+          printf '%s\n' \
+            "APPLICATION_SUBNET=${APPLICATION_SUBNET}" \
+            "BACKUP_ID=${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            "DEPLOYMENT_ID=${GITHUB_SHA}" \
+            "FRONTEND_INTERNAL_IP=${FRONTEND_INTERNAL_IP}" \
+            "PROXY_NETWORK=${PROXY_NETWORK}" \
+            "TRUSTED_PROXY_IP=${TRUSTED_PROXY_IP}" | \
+            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+              "umask 077; cat > '${remote_stage}/.deployment.env'"
+          printf 'BACKEND_IMAGE=%s\nFRONTEND_IMAGE=%s\n' \
+            "$BACKEND_IMAGE" "$FRONTEND_IMAGE" | \
+            ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+              "umask 077; cat > '${remote_stage}/.images.env'"
+
+      - name: Validate and activate staged files
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_stage="${DEPLOY_PATH}/.incoming-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "sh '${remote_stage}/deploy/install-release.sh' '${remote_stage}' '${DEPLOY_PATH}'"
+
+      - name: Remove staged files
+        if: always() && steps.stage.outcome != 'skipped'
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          remote_stage="${DEPLOY_PATH}/.incoming-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "rm -rf -- '${remote_stage}'"
+
+      - name: Deploy immutable images
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "cd '${DEPLOY_PATH}' && sh ./deploy/production.sh deploy-current"
+
+      - name: Verify public health
+        env:
+          PRODUCTION_URL: ${{ vars.PRODUCTION_URL }}
+        run: |
+          health_url="${PRODUCTION_URL%/}/api/health"
+          attempt=1
+          while [ "$attempt" -le 20 ]; do
+            if curl --fail --silent --max-time 5 "$health_url" | \
+              grep -q '"status":"ok"'; then
+              echo "Public health: OK"
+              exit 0
+            fi
+            attempt=$((attempt + 1))
+            sleep 3
+          done
+          echo "Public health check timed out" >&2
+          exit 1
+
+      - name: Record last-known-good deployment
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER }}
+        run: |
+          target="${DEPLOY_USER}@${DEPLOY_HOST}"
+          ssh -p "$DEPLOY_PORT" -i ~/.ssh/deploy_key "$target" \
+            "cd '${DEPLOY_PATH}' && sh ./deploy/production.sh mark-healthy '${GITHUB_SHA}'"

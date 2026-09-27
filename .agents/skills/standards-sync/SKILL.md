@@ -98,21 +98,37 @@ Do not load a reference merely to prove that it was installed.
 
 ## Safe write fallback
 
-If the normal patch/write mechanism cannot modify an installed skill directory because of sandbox, mount, or permission restrictions:
+If the normal patch/write mechanism cannot modify an installed skill directory, first distinguish a Codex sandbox restriction from a real filesystem permission/ownership/mount failure.
+
+### Sandbox-managed read-only/restricted path
+
+When the failure is caused by the Codex sandbox or managed permission profile (for example, a project-local `.agents` path is intentionally exposed read-only even though the developer owns the files):
 
 1. do not change filesystem permissions, ownership, or mount configuration;
-2. do not use `sudo`, privilege escalation, or another privileged write path to bypass the failure;
+2. do not use `sudo`, `su`, `chmod`, `chown`, remounting, or another privileged OS-level bypass;
 3. do not refetch upstream content that was already obtained;
-4. do not delete an existing `SKILL.md` before its replacement is ready to be written;
-5. prepare the complete replacement before mutating the existing installed file;
-6. prefer one non-privileged permitted atomic or single-step replacement mechanism when available;
-7. if a normal non-privileged write attempt fails with an OS-level `Permission denied` caused by ownership/permissions, stop instead of probing privileged alternatives;
-8. if a multi-step non-privileged fallback is unavoidable, preserve a valid existing skill until the replacement can be written successfully;
-9. if no permitted non-privileged write mechanism exists, stop the synchronization and report the exact blocked paths.
+4. prepare the complete replacement before mutating an existing installed file;
+5. when the runtime supports explicit user approval for an unsandboxed command, request approval for one narrowly scoped **non-privileged** write operation that updates only the required standards paths;
+6. reuse the already fetched upstream content for that approved write;
+7. do not widen the approved command to unrelated project files, shell configuration, credentials, or other protected paths;
+8. after the approved standards write completes, return immediately to normal sandboxed execution;
+9. if the user declines the approval or no approved unsandboxed mechanism is available, stop the synchronization and report the exact blocked paths.
+
+An explicit user-approved unsandboxed write is a sandbox capability exception, not permission repair. It must still run as the normal developer user and must not rely on OS privilege escalation.
+
+### Real filesystem permission, ownership, or mount failure
+
+If a non-sandboxed/non-privileged write still fails because of real OS-level permissions, ownership, or a genuinely read-only mount:
+
+1. do not probe privileged alternatives;
+2. do not use `sudo`, `su`, `chmod`, `chown`, or remounting to bypass the failure;
+3. preserve any valid existing skill until a replacement can be written successfully;
+4. do not delete an existing `SKILL.md` first;
+5. stop synchronization and report the exact blocked path and failure.
+
+Filesystem ownership/permission/mount repair is a developer/environment responsibility, not part of standards synchronization.
 
 Never use a delete-first replacement that can leave the project without a valid installed skill after a later write failure.
-
-Filesystem ownership/permission repair is a developer/environment responsibility, not part of standards synchronization. Report the blocked path and leave permission repair to the developer.
 
 ## Update workflow
 

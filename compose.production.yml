@@ -1,0 +1,145 @@
+name: support-assistant
+
+services:
+  redis:
+    image: redis:8.8.3-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    expose:
+      - "6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - application
+    restart: unless-stopped
+
+  database-backup:
+    image: ${BACKEND_IMAGE}
+    environment:
+      BACKUP_ID: ${BACKUP_ID:?BACKUP_ID is required}
+    volumes:
+      - support-assistant-data:/app/data
+    command:
+      - python
+      - -c
+      - |
+        import os
+        import pathlib
+        import re
+        import sqlite3
+
+        backup_id = os.environ["BACKUP_ID"]
+        if re.fullmatch(r"[A-Za-z0-9._-]+", backup_id) is None:
+            raise RuntimeError("BACKUP_ID contains unsupported characters")
+
+        source = pathlib.Path("/app/data/app.db")
+        if not source.is_file():
+            print("SQLite backup: source database does not exist yet")
+            raise SystemExit(0)
+
+        backup_directory = pathlib.Path("/app/data/backups")
+        backup_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        destination = backup_directory / f"app.db.before-{backup_id}"
+        temporary = backup_directory / f".{destination.name}.tmp"
+        if destination.exists() or temporary.exists():
+            raise RuntimeError("SQLite backup target already exists")
+
+        try:
+            with sqlite3.connect(f"file:{source}?mode=ro", uri=True) as current:
+                with sqlite3.connect(temporary) as backup:
+                    current.backup(backup)
+                    if backup.execute("PRAGMA integrity_check").fetchone() != ("ok",):
+                        raise RuntimeError("SQLite backup integrity check failed")
+            temporary.chmod(0o600)
+            temporary.replace(destination)
+        finally:
+            temporary.unlink(missing_ok=True)
+
+        print(f"SQLite backup: {destination}")
+    network_mode: none
+    restart: "no"
+
+  migrate:
+    image: ${BACKEND_IMAGE}
+    env_file:
+      - path: ${PRODUCTION_ENV_FILE:-.env}
+        required: true
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - support-assistant-data:/app/data
+    command: ["python", "-m", "alembic", "upgrade", "head"]
+    networks:
+      - application
+    restart: "no"
+
+  backend:
+    image: ${BACKEND_IMAGE}
+    env_file:
+      - path: ${PRODUCTION_ENV_FILE:-.env}
+        required: true
+    environment:
+      DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
+      REDIS_URL: redis://redis:6379/0
+      FORWARDED_ALLOW_IPS: ${FRONTEND_INTERNAL_IP}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    volumes:
+      - support-assistant-data:/app/data
+    expose:
+      - "8000"
+    networks:
+      - application
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2)",
+        ]
+      interval: 15s
+      timeout: 3s
+      start_period: 15s
+      retries: 3
+    restart: unless-stopped
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    environment:
+      TRUSTED_PROXY_IP: ${TRUSTED_PROXY_IP}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      application:
+        ipv4_address: ${FRONTEND_INTERNAL_IP}
+      proxy:
+        aliases:
+          - support-assistant-frontend
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 15s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+    restart: unless-stopped
+
+networks:
+  application:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${APPLICATION_SUBNET}
+  proxy:
+    external: true
+    name: ${PROXY_NETWORK}
+
+volumes:
+  support-assistant-data:

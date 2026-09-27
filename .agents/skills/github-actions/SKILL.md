@@ -179,6 +179,22 @@ Use a matrix only when the project genuinely supports multiple required runtimes
 
 Do not multiply CI cost for combinations the project does not claim to support.
 
+## CD gating
+
+When GitHub Actions also performs production deployment, the deployed revision must first pass its required validation.
+
+Do not structure independent push-triggered CI and deploy workflows so deployment can start while CI for the same commit is still running or can fail independently.
+
+Prefer one of:
+
+- a deployment job that `needs` the required validation/build jobs in the same workflow;
+- a reusable validation workflow called by the deployment workflow;
+- a carefully filtered `workflow_run`/equivalent gate that deploys only the exact successfully validated revision.
+
+Branch protection before merge is useful but does not replace validation of the exact production revision when post-merge changes/checks can differ.
+
+For workflow changes, provision and run deterministic workflow validation such as `actionlint`; do not silently skip the final check because the tool is unavailable locally.
+
 ## Required checks
 
 For repositories that support branch protection/rulesets, configure required CI checks before merge into:
