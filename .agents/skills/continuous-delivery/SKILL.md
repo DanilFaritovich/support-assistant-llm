@@ -155,6 +155,7 @@ If a task genuinely crosses both phases and the required external prerequisites 
 ## Common safety rules
 
 - use least-privilege GitHub Actions permissions;
+- require the exact production revision to pass its required validation before deployment can start;
 - keep production secrets scoped to a GitHub Environment;
 - never expose production secrets to untrusted Pull Request jobs;
 - allow only one production deployment at a time;
@@ -168,6 +169,8 @@ If a task genuinely crosses both phases and the required external prerequisites 
 ## CI/CD boundary
 
 Pull Request CI validates deployment artifacts but must not perform a real production deployment.
+
+Production deployment must be gated on successful validation for the exact revision being deployed. Do not run CI and production deployment as independent parallel workflows where deployment can proceed while that revision's required checks are failing or still running.
 
 The protected production job runs only from the approved production source and environment.
 
@@ -185,4 +188,3 @@ foundation ready
 ```
 
 Do not mark production CD complete based only on generated YAML or an unexecuted deployment path.
-

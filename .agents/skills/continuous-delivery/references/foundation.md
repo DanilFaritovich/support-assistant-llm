@@ -99,6 +99,14 @@ Use production concurrency so two deployments cannot modify the server simultane
 
 A manual `workflow_dispatch` may be prepared for controlled redeploy/recovery, but it must not permit arbitrary untrusted artifacts.
 
+Before production integration is complete, do not enable an unconditional automatic deployment from every `main` push unless the external production Environment is already intentionally ready. Prefer one of:
+
+- manual `workflow_dispatch` for the foundation;
+- an explicit disabled-by-default Environment/repository variable gate such as `DEPLOY_ENABLED`;
+- adding the automatic production trigger only during the production-integration phase.
+
+The foundation may prepare the complete deployment job without making it operational by accident.
+
 ## Keep deployment logic maintainable
 
 Avoid a large opaque shell program inside workflow YAML.
@@ -125,6 +133,21 @@ Add project-owned commands where they improve reproducibility, for example:
 
 Do not add commands merely to create abstraction with no reuse.
 
+## Workflow and script validation
+
+Treat deployment orchestration as executable code.
+
+When GitHub Actions workflows or deployment shell scripts change:
+
+- validate workflow syntax/semantics with `actionlint` or an equivalent pinned/provisioned checker;
+- validate shell scripts with `shellcheck` when applicable, in addition to shell syntax checks;
+- ensure CI installs/provisions required validation tools instead of silently skipping them because they are absent on one developer machine;
+- check that every shell variable referenced by a workflow step is either declared in that step/job environment, assigned in the script, or intentionally defaulted;
+- validate required GitHub Environment variables/secrets in a step that actually receives those values;
+- fail closed on missing deployment inputs.
+
+A local "tool unavailable: skipped" result is not sufficient final validation for newly introduced production orchestration; the repository CI must perform the deterministic check.
+
 ## Migration hook
 
 Prepare an explicit migration command for deployment when the project uses schema migrations.
@@ -132,6 +155,8 @@ Prepare an explicit migration command for deployment when the project uses schem
 For Alembic projects, use the project's stable Alembic command.
 
 A failed required migration must fail deployment.
+
+For file-backed databases or other persistent state where downgrade/recovery is not trivial, define a backup/snapshot step or an explicit recovery boundary before potentially destructive production migrations.
 
 Do not move migrations into uncontrolled application startup.
 
@@ -185,9 +210,15 @@ Typical contract:
 - SSH key-based access;
 - known host key available for GitHub Actions;
 - required public reverse proxy/DNS/firewall setup;
-- access to GHCR when images are private.
+- access to GHCR when images are private;
+- non-conflicting Docker network/subnet planning when the project uses fixed networks;
+- a narrowly defined trusted-proxy source when forwarded client IPs affect security controls or rate limiting.
 
 Do not require root SSH if a less-privileged user can deploy safely.
+
+Document that membership in the host Docker group or unrestricted Docker socket access is effectively host-level privilege. A "non-root deploy user" is not strongly isolated merely because SSH login itself is non-root. Use rootless Docker or a more constrained deployment mechanism when stronger isolation is required.
+
+When a shared proxy network is used, do not blindly trust the entire broad network CIDR for forwarded client identity if the exact reverse-proxy address/range can be trusted instead.
 
 ## GitHub Environment contract
 
@@ -240,4 +271,3 @@ Foundation is complete when:
 At completion, report the external prerequisites still required before production integration.
 
 Do not claim production CD is complete at this phase.
-

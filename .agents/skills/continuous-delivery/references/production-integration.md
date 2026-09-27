@@ -36,6 +36,8 @@ Keep deployment credentials and production runtime secrets scoped to that Enviro
 
 Non-sensitive values may use Environment Variables.
 
+Validate required Environment inputs before network mutation. Each validation step must explicitly receive the variables/secrets it checks; do not reference an undeclared shell variable and mistake that failure for a missing production configuration.
+
 Do not expose production Environment secrets to untrusted Pull Request jobs.
 
 Use only the permissions the deployment job requires.
@@ -52,6 +54,8 @@ Use:
 - a stable server path such as `/opt/<project>/`.
 
 Do not disable host verification for convenience.
+
+If the deployment user talks directly to the Docker daemon through the host socket/group, document that this usually grants host-equivalent control. "Non-root SSH user" alone is not a strong Docker privilege boundary.
 
 Do not use root SSH when the deployment user has sufficient scoped permissions.
 
@@ -73,12 +77,16 @@ The runtime `.env` comes from the protected GitHub Environment.
 
 Never print the production env contents into workflow logs.
 
-When writing the env file:
+When writing runtime/deployment files:
 
-- create/overwrite it deliberately;
-- restrict permissions, normally `0600`;
+- create replacements deliberately;
+- stage new content to a temporary file/directory first when practical;
+- validate the staged deployment definition before replacing live files;
+- atomically rename staged files into place where the filesystem permits it;
+- restrict secret-file permissions, normally `0600`;
 - avoid unnecessary plaintext temporary copies;
-- leave the final runtime file available so the host can restart the deployed stack without GitHub Actions.
+- do not leave a half-written `.env`, Compose file, or deployment script as live state after an interrupted transfer;
+- leave the final runtime files available so the host can restart the deployed stack without GitHub Actions.
 
 ## Exact image deployment
 
@@ -151,10 +159,14 @@ Capture enough diagnostics to understand a failed deployment without dumping sec
 
 Before replacing a working deployment, preserve the previous immutable application image references when automatic application rollback is supported.
 
+Track rollback state as the last known-good successful deployment, not merely the immediately preceding deployment attempt.
+
+Do not overwrite the last-known-good image references until the new deployment has passed all required service and public health checks. A retry of a failed revision must not erase the identity of the last healthy revision.
+
 If the new application update fails after replacement and application rollback is safe:
 
 ```text
-restore previous application image references
+restore last-known-good application image references
   -> update services
   -> wait for health
   -> verify public endpoint
@@ -184,6 +196,8 @@ Do not cancel a deployment in a way that can leave migrations/service replacemen
 ## Controlled first deployment
 
 Treat the first production deployment as a verification of the complete contract.
+
+Before enabling automatic deployment from the stable branch, verify that deployment is gated on successful required checks for the exact revision being deployed. CI and deployment must not race independently.
 
 Check:
 
@@ -230,4 +244,3 @@ Production integration is complete when:
 - documentation matches the real deployed process.
 
 Only after these checks may the project claim production CD is operational.
-
