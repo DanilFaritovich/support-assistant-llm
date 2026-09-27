@@ -108,6 +108,26 @@ affect API/database integration, end-to-end behavior, builds, Docker, or CI.
 Redis integration tests run when `TEST_REDIS_URL` is available; GitHub Actions
 provides it through an isolated Redis service.
 
+## Optional delegated execution worker
+
+If the `free_worker` MCP tools are available, prefer them only when delegation is
+likely to save substantial primary-model context:
+
+- use `free_worker.inspect_task` for bounded high-output validation, CI/build/log
+  diagnosis, or broad routine repository exploration;
+- use `free_worker.fix_task` for repeated mechanical
+  run/diagnose/fix/rerun loops when intended behavior is already clear;
+- delegate the whole execution loop rather than individual tiny commands;
+- run small deterministic commands with compact output directly in Codex;
+- if the MCP server is unavailable, continue directly without treating its absence as
+  an error.
+
+Keep architecture, security, persistence/migration strategy, concurrency, deployment
+design, public contracts, ambiguous behavior, and final acceptance on the primary
+Codex model. The worker never owns staging, commits, branches, push, PR delivery, or
+merge. After a delegated fix, review the resulting working-tree diff before accepting
+the changes.
+
 ## Git and CI
 
 - `main` is stable; `develop` is the integration branch.
