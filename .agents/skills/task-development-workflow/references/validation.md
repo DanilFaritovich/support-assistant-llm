@@ -87,6 +87,11 @@ Do not trade correctness for fewer checks; remove redundant coverage, not indepe
 
 ## Failure handling
 
+When an optional execution worker is available and a failure is likely to produce large
+logs or a repeated mechanical diagnose/fix/rerun loop, the whole bounded loop may be
+delegated according to the context-efficiency reference. Keep behavioral/design decisions
+and final acceptance on the primary model.
+
 When a broad check fails:
 
 1. identify the specific failure;

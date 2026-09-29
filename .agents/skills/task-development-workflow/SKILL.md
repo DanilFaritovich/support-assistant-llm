@@ -15,6 +15,8 @@ Use this core workflow for normal feature, fix, refactor, chore, and documentati
 - follow existing architecture and conventions;
 - normalize before read-only validation;
 - use targeted checks during development;
+- use an available optional execution worker for bounded high-output or mechanical loops
+  when delegation clearly reduces primary-model context;
 - avoid repeated reads/checks;
 - leave final merge to the developer.
 
@@ -59,7 +61,13 @@ Read `ARCHITECTURE.md` only when the task affects architecture, persistence, ser
 
 Inspect only relevant source, tests, interfaces, configuration, analogous implementations, and documentation.
 
-For large repositories, continuations, noisy commands, or large diffs, read [references/context-efficiency.md](./references/context-efficiency.md).
+For large repositories, continuations, noisy commands, large diffs, or optional delegated
+execution workers, read [references/context-efficiency.md](./references/context-efficiency.md).
+
+An execution worker is an optional capability, not a project dependency. Use it only when
+it is available and its advertised tool/server instructions fit the bounded task. If it
+is unavailable, continue directly without treating that as an error or changing the
+project to install it.
 
 ## Determine and implement scope
 
