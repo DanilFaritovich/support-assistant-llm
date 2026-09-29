@@ -68,7 +68,7 @@ If one commit intentionally contains several tightly coupled changes, its messag
 
 ## Commit and push
 
-Stage only files belonging to the task.
+Stage only files belonging to the task and the current logical commit.
 
 Never include:
 
@@ -113,6 +113,28 @@ If CI fails:
 6. push and let CI rerun.
 
 Do not ingest unrelated successful CI logs.
+
+### Optional delegated GitHub/CI inspection
+
+When an optional execution worker is available, it may gather and compress noisy remote
+delivery context such as:
+
+- Pull Request metadata and changed-file summaries;
+- review comments or unresolved review findings;
+- GitHub Actions/check status;
+- relevant failing CI logs;
+- other read-only GitHub evidence needed to prepare a delivery/merge review.
+
+The worker should return a compact result and must not own Git delivery or merge.
+
+Before any actual merge, the primary Codex model must independently verify the
+merge-critical current state from an authoritative GitHub source, including the target
+Pull Request, required CI/check status, and mergeability. Do not merge solely from a
+worker summary that may be stale or incomplete.
+
+Git staging, commits, branch/ref mutation, push, Pull Request mutation, and merge remain
+primary-model responsibilities unless a narrower project rule explicitly permits an
+action. The merge boundary below still applies.
 
 ## Merge boundary
 

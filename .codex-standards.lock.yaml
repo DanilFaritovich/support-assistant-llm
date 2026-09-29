@@ -2,7 +2,7 @@ version: 1
 
 source:
   repository: https://github.com/DanilFaritovich/codex-development-standards
-  ref: 54cd38f77fd0c4c641769c6bf1d3271580539d08
+  ref: 837eb6a79aa7a9a2e34110b347f4407a5f5345dc
 
 profile:
   name: fastapi-vue-clean

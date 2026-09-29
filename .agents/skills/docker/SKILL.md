@@ -37,10 +37,14 @@ Prefer:
 
 - explicit supported base image versions;
 - multi-stage builds when materially useful;
-- cache-friendly dependency layers;
+- cache-friendly dependency layers, with dependency manifests/lockfiles copied before frequently changing source;
 - minimal runtime dependencies;
-- non-root runtime where practical;
-- deterministic dependency installation.
+- non-root runtime by default for application containers, with documented exceptions when required;
+- deterministic dependency installation from committed lockfiles where the ecosystem supports them.
+
+Changing only application code should not normally invalidate dependency installation layers. Use a multi-stage build when it materially reduces the final image or removes build tools. Do not pursue cache efficiency at the expense of reproducibility or secret safety.
+
+When authoring or modifying a Dockerfile, dependency installation, build context, or image build cache, read [references/dockerfile-build.md](./references/dockerfile-build.md).
 
 Never bake secrets into images.
 
@@ -88,18 +92,22 @@ Do not rebuild the entire stack when only one service/image requires validation.
 
 Successful validation should be summary-first; detailed build/container output belongs primarily to failures.
 
+Use the repository's stable Make targets for Docker operations when they exist. This project exposes `make docker-build`, `make health`, `make docker-check`, `make production-config`, and `make deployment-check`; production-operation targets require their documented runtime prerequisites.
+
 For Docker command/log/CI behavior, read [references/validation-output.md](./references/validation-output.md).
 
 ## Security baseline
 
 At minimum:
 
-- no embedded secrets;
-- minimal published ports;
-- internal backend/database/cache networking where practical;
-- supported base images;
-- non-root execution where practical;
-- minimal runtime packages;
+- no embedded secrets or Docker socket mounts for application containers by default;
+- minimal published ports and internal backend/database/cache networking where practical;
+- supported base images and minimal runtime packages;
+- run application processes as non-root by default;
+- drop unneeded Linux capabilities and prevent privilege escalation where supported;
+- restrict writable paths and runtime resources when compatible with the service;
 - explicit readiness behavior.
 
-Adapt stricter controls to the deployment environment.
+Do not use `privileged: true` or unrestricted host namespaces as a convenience workaround. Apply least-privilege settings per service; databases, proxies, and third-party images may need justified exceptions.
+
+When authoring or changing Dockerfile/Compose runtime permissions, capabilities, filesystems, mounts, or resource limits, read [references/container-security.md](./references/container-security.md). For host-level Docker permissions, also use the Ansible Docker-host reference if applicable.

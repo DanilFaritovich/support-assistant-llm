@@ -101,6 +101,50 @@ If compact output is insufficient after a failure, rerun only the failing comman
 
 Do not request verbose output proactively.
 
+## Optional delegated execution workers
+
+When an optional execution-worker tool is available, use it when delegation is likely to
+save substantial primary-model context while keeping the task bounded.
+
+Good delegation targets include:
+
+- failing test, build, Docker/Compose, or CI workflows with large/noisy output;
+- repeated mechanical `run -> diagnose -> fix -> rerun` loops;
+- broad routine repository searches whose useful result is a compact summary;
+- GitHub/CI inspection where raw logs or many remote records would otherwise enter the
+  primary-model context;
+- repetitive local refactors where intended behavior is already unambiguous.
+
+Prefer delegating the whole bounded execution loop rather than one tiny shell command at
+a time.
+
+Run small deterministic commands with compact output directly when worker overhead would
+be larger than the result.
+
+Keep these responsibilities on the primary model:
+
+- architecture and module-boundary decisions;
+- security decisions and secret handling;
+- persistence and migration strategy;
+- transaction/concurrency design;
+- deployment design and production mutation;
+- public contracts and ambiguous behavior;
+- final diff/acceptance review;
+- Git staging, commits, branch/ref mutation, push, PR delivery, and merge.
+
+Follow the worker's own tool/server instructions and permission boundary. Do not send
+production credentials, secrets, or unrelated repository data merely to enable
+delegation.
+
+A delegated inspect operation should return a compact actionable result rather than raw
+logs. After a delegated fix operation, the primary model must inspect the resulting
+working-tree status/diff before accepting or delivering the changes.
+
+If the optional worker is unavailable, fails to initialize, or cannot safely perform the
+task, continue directly with the normal workflow. Its absence is not a project failure
+and must not trigger installation or configuration changes unless the user explicitly
+requested them.
+
 ## Agent narration
 
 Keep intermediate narration short and decision-oriented.
