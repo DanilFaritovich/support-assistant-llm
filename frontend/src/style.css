@@ -462,3 +462,39 @@ h2 {
   margin-bottom: 0;
   font-size: 13px;
 }
+
+.workspace-panel details {
+  margin-top: 1rem;
+}
+.workspace-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.workspace-panel fieldset {
+  min-width: 0;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+.workspace-item {
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border, #cbd5e1);
+  margin-bottom: 0.75rem;
+}
+.workspace-panel input:not([type='file']) {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.4rem;
+  font: inherit;
+}
+.workspace-panel input[type='file'] {
+  max-width: 100%;
+}
+.workspace-actions {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}

@@ -18,7 +18,8 @@ Support requests often arrive as free-form text. A support agent must identify t
 - Visible routing rationale and an explicit confirmation step.
 - Manual department override with no second LLM request.
 - Description generation that uses the user-confirmed `department_id`.
-- Three fictional example tickets, an editable template, and reset controls.
+- Three fictional example tickets per language, editable templates, and reset controls.
+- Guest workspaces without registration: private departments, examples, named templates, a default template, and JSON export/import.
 - Idempotent initialization of six fictional IT departments.
 - OpenRouter integration restricted to `openrouter/free` and `:free` models.
 - JSON Schema structured output, Pydantic validation, timeouts, retries, and safe API errors.
@@ -41,6 +42,24 @@ Typical workflow:
 
 The screenshot was captured from the Docker Compose deployment and contains demonstration data only.
 
+## Guest workspaces
+
+Open **Manage workspace** to edit departments, examples, and named templates, then
+choose **Save workspace**. The first save creates a private space identified by
+an HttpOnly browser cookie. Reloading the same browser restores saved settings;
+clearing cookies removes access. Export saved settings as JSON to transfer or
+restore them in another browser. Import and demo restoration replace the whole
+settings document after confirmation. Generated tickets are not stored.
+
+By default, settings expire 90 days after their last save. Each space allows
+20 departments, 20 examples, and 10 templates, with a combined limit of 15,000
+UTF-8 bytes. At least one department and one template must remain. Conflicting
+edits from another tab return HTTP 409; unsaved edits remain available to copy
+before explicitly reloading saved settings. LLM quotas remain shared per IP.
+
+See the [development roadmap and handoff](docs/roadmap.md) for task status and
+future decision points.
+
 ## Technology stack
 
 | Area | Technology |
@@ -53,7 +72,7 @@ The screenshot was captured from the Docker Compose deployment and contains demo
 
 ## Architecture
 
-The browser calls only relative `/api` endpoints. Nginx serves the compiled SPA and proxies those requests to FastAPI on the private Compose network. FastAPI orchestrates application services behind routing and drafting ports. OpenRouter connectors implement those ports and validate every model response before it reaches the API. SQLAlchemy repositories isolate department persistence.
+The browser calls only relative `/api` endpoints. Nginx serves the compiled SPA and proxies those requests to FastAPI on the private Compose network. FastAPI orchestrates application services behind routing and drafting ports. OpenRouter connectors implement those ports and validate every model response before it reaches the API. SQLAlchemy repositories isolate department and guest-settings persistence.
 
 ```text
 Browser -> Nginx/Vue -> FastAPI routes -> application services
@@ -114,6 +133,9 @@ departments are added safely without duplicating existing rows.
 | `SERVICE_NAME` | No | `support-assistant-backend` | Structured log service field |
 | `ENVIRONMENT` | No | `development` | Structured log environment field |
 | `FORWARDED_ALLOW_IPS` | No | loopback only | Exact trusted reverse-proxy IPs/CIDRs used by Uvicorn |
+| `GUEST_COOKIE_SECURE` | No | `true` | Secure guest cookie; local HTTP Compose explicitly sets `false` |
+| `GUEST_WORKSPACE_TTL_DAYS` | No | `90` | Expiration after the last settings save |
+| `GUEST_WORKSPACE_MAX_COUNT` | No | `5000` | Global guest-space capacity; expired rows are removed on writes |
 | `DATABASE_URL` | No | Compose-managed SQLite URL | SQLAlchemy database URL for non-Compose deployments |
 
 Do not place a real key in any tracked file. The frontend bundle never receives the key.
@@ -134,7 +156,10 @@ Grafana Alloy) remains a deployment concern and is not bundled into Compose.
 | Method | Endpoint | Purpose |
 | --- | --- | --- |
 | `GET` | `/api/health` | Container and reverse-proxy health signal |
-| `GET` | `/api/departments` | List available departments |
+| `GET` | `/api/departments` | List departments in the current workspace or public demo |
+| `GET` | `/api/workspace` | Read saved settings or demo defaults without creating a workspace |
+| `GET` | `/api/workspace/defaults` | Read the current demo defaults |
+| `PUT` | `/api/workspace` | Atomically save `{data, revision}`; requires `X-Workspace-Request: 1` |
 | `POST` | `/api/tickets/route` | Propose title, department, and rationale |
 | `POST` | `/api/tickets/process` | Generate a description for the supplied final department |
 

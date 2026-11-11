@@ -9,8 +9,10 @@ The frontend is a Vue 3 single-page application for reviewing the entire support
 ```text
 src/
 ├── App.vue                 # workflow state and user interface
-├── api/tickets.ts          # typed HTTP client for relative /api routes
-├── demo.ts                 # fictional tickets and generic template
+├── api/tickets.ts          # typed HTTP client for ticket routes
+├── api/workspace.ts        # settings reads/saves and bounded JSON import
+├── components/WorkspaceManager.vue # workspace editor, transfer and restoration
+├── demo.ts                 # prerender-only default examples and template
 ├── locale.ts               # URL locale and saved preference for root visits
 ├── messages.ts             # typed English/Russian interface and public copy
 ├── router.ts               # language routes; same workflow component across locales
@@ -32,13 +34,16 @@ The application intentionally uses local component state rather than a global st
 - Department review: unconfirmed proposal, manual selection, and confirmed result.
 - Drafting: editable template, loading, generated result, and recoverable error.
 
-Changing the ticket invalidates routing and drafting results. Confirming the suggestion stores its ID locally. Choosing another department updates the same local final ID and does not call the routing endpoint again. The processing request always uses that final `department_id`.
+Changing the ticket or applying saved workspace settings invalidates routing and drafting results. Editing the description template clears the previous generated description. Confirming the suggestion stores its ID locally. Choosing another department updates the same local final ID and does not call the routing endpoint again. The processing request always uses that final `department_id`.
 
 ## Backend interaction
 
 The client uses relative routes so the same bundle works in development and behind Nginx:
 
-- `GET /api/departments`
+- `GET /api/workspace` (initial authoritative settings and department load)
+- `GET /api/workspace/defaults`
+- `PUT /api/workspace`
+- `GET /api/departments` (directory refresh)
 - `POST /api/tickets/route`
 - `POST /api/tickets/process`
 
@@ -51,7 +56,24 @@ Redis quota for LLM operations.
 
 ## Demo data
 
-`src/demo.ts` contains three fictional requests and one generic description template in each supported language. Users can load an example, edit every field, clear it, or enter their own request. Department data comes from the backend database rather than being duplicated in the UI.
+`src/demo.ts` supplies fictional examples and templates for build-time rendering
+before any API request. After mounting, `/api/workspace` supplies authoritative
+saved settings or backend-owned demo defaults. `WorkspaceManager.vue` edits a
+separate draft; **Save workspace** persists it atomically with a revision.
+Conflicts preserve edits and offer an explicit reload that discards them.
+Department changes invalidate prior routing and confirmation.
+
+Examples and templates may target English, Russian, or both. A named default
+template overrides the language default. Editing text for the current ticket
+does not update saved templates. Export downloads saved settings without a token
+or revision. Import validates the file size/format locally and all business
+constraints on the backend; import and demo restoration require confirmation
+before replacing saved settings. Settings controls are disabled during LLM calls.
+
+Saved data belongs to the browser cookie, expires after the backend-provided
+retention period (90 days by default), and is never persisted in localStorage.
+Only the interface language uses localStorage. No generated-ticket history is
+stored; examples are persisted only through explicit settings saves.
 
 ## Interface language
 
@@ -61,7 +83,7 @@ Switching language preserves entered text, the confirmed department, and generat
 
 ## Static rendering and SEO
 
-`npm run build` builds browser assets and a temporary server bundle, then `scripts/build.mjs` renders the initial Vue interface into `dist/en/index.html` and `dist/ru/index.html`. It also writes the language chooser, `sitemap.xml` and `robots.txt`. This rendering makes no backend or OpenRouter calls and contains no user input. The runtime remains static Nginx; no Node server is required. Vue hydrates the localized HTML and fetches departments after mounting.
+`npm run build` builds browser assets and a temporary server bundle, then `scripts/build.mjs` renders the initial Vue interface into `dist/en/index.html` and `dist/ru/index.html`. It also writes the language chooser, `sitemap.xml` and `robots.txt`. This rendering makes no backend or OpenRouter calls and contains no user input. The runtime remains static Nginx; no Node server is required. Vue hydrates the localized HTML and fetches workspace settings and departments after mounting.
 
 Each language has its own title, description and canonical URL, plus reciprocal `hreflang` links for English, Russian and `x-default`. The confirmed public origin is `https://support.danil-miftakhov.dev`; this is a build contract, not evidence that DNS/TLS or deployment is configured. `VITE_SITE_ORIGIN` overrides it at build time and must be an HTTPS origin without a path, query or credentials. HTTP localhost origins are allowed for local preview:
 

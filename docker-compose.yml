@@ -22,6 +22,7 @@ services:
       - path: ./.env
         required: false
     environment:
+      GUEST_COOKIE_SECURE: "false"
       DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
     volumes:
       - support-assistant-data:/app/data
@@ -36,6 +37,7 @@ services:
       - path: ./.env
         required: false
     environment:
+      GUEST_COOKIE_SECURE: "false"
       DATABASE_URL: sqlite+aiosqlite:////app/data/app.db
       REDIS_URL: redis://redis:6379/0
       FORWARDED_ALLOW_IPS: 172.30.0.3

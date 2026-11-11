@@ -1,0 +1,54 @@
+{
+  "examples": [
+    {
+      "id": "en-login",
+      "name": "Sign-in problem",
+      "text": "After entering a valid one-time code in the employee portal, the page shows “Session expired” and returns to the sign-in screen. The issue started this morning and affects two test accounts.",
+      "locale": "en"
+    },
+    {
+      "id": "en-laptop",
+      "name": "Laptop docking issue",
+      "text": "A demo user’s laptop no longer detects either external monitor after reconnecting to the USB-C dock. The keyboard and network connection through the same dock still work.",
+      "locale": "en"
+    },
+    {
+      "id": "en-deployment",
+      "name": "Deployment unavailable",
+      "text": "The staging deployment for the demo catalog service has been pending for 25 minutes. The deployment dashboard reports that no runner is available; the previous deployment completed successfully.",
+      "locale": "en"
+    },
+    {
+      "id": "ru-login",
+      "name": "Проблема со входом",
+      "text": "После ввода правильного одноразового кода на портале сотрудников появляется сообщение «Сессия истекла» и снова открывается экран входа. Проблема возникла сегодня утром и воспроизводится на двух тестовых учётных записях.",
+      "locale": "ru"
+    },
+    {
+      "id": "ru-laptop",
+      "name": "Проблема с док-станцией",
+      "text": "После повторного подключения ноутбука демонстрационного пользователя к док-станции USB-C оба внешних монитора перестали определяться. Клавиатура и сетевое подключение через ту же док-станцию работают.",
+      "locale": "ru"
+    },
+    {
+      "id": "ru-deployment",
+      "name": "Развёртывание недоступно",
+      "text": "Развёртывание демонстрационного сервиса каталога в тестовой среде ожидает запуска уже 25 минут. Панель развёртывания сообщает, что нет доступного runner. Предыдущее развёртывание завершилось успешно.",
+      "locale": "ru"
+    }
+  ],
+  "templates": [
+    {
+      "id": "en-default",
+      "name": "Default template",
+      "text": "Summary:\n\nEnvironment:\n\nSteps to reproduce:\n\nActual result:\n\nExpected result:\n\nAdditional information:",
+      "locale": "en"
+    },
+    {
+      "id": "ru-default",
+      "name": "Стандартный шаблон",
+      "text": "Краткое описание:\n\nОкружение:\n\nШаги воспроизведения:\n\nФактический результат:\n\nОжидаемый результат:\n\nДополнительная информация:",
+      "locale": "ru"
+    }
+  ]
+}

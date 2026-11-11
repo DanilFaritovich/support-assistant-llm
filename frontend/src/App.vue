@@ -3,6 +3,9 @@ import { computed, onMounted, ref, shallowRef, watch } from 'vue';
 import { RouterLink } from 'vue-router';
 
 import { ApiError, getDepartments, processTicket, routeTicket } from './api/tickets';
+import { getWorkspace } from './api/workspace';
+import WorkspaceManager from './components/WorkspaceManager.vue';
+import type { WorkspaceState } from './types/workspace';
 import { DEMO_TEMPLATES, DEMO_TICKETS_BY_LOCALE } from './demo';
 import { useLocale } from './locale';
 import type {
@@ -12,11 +15,37 @@ import type {
 } from './types/ticket';
 
 const { locale, text, rememberLocale } = useLocale();
-const demoTickets = computed(() => DEMO_TICKETS_BY_LOCALE[locale.value]);
-const demoTemplate = computed(() => DEMO_TEMPLATES[locale.value]);
+const workspace = ref<WorkspaceState | null>(null);
+const workspaceError = shallowRef<unknown>(null);
+const savedTemplates = computed(
+  () =>
+    workspace.value?.data.templates.filter(
+      (item) =>
+        item.locale === null ||
+        item.locale === locale.value ||
+        item.id === workspace.value?.data.default_template_id,
+    ) ?? [],
+);
+const selectedTemplateId = ref('');
+const demoTickets = computed(() =>
+  workspace.value
+    ? workspace.value.data.examples
+        .filter((item) => item.locale === null || item.locale === locale.value)
+        .map((item) => ({ id: item.id, label: item.name, ticketText: item.text }))
+    : DEMO_TICKETS_BY_LOCALE[locale.value],
+);
+const demoTemplate = computed(() => {
+  const data = workspace.value?.data;
+  return (
+    data?.templates.find((item) => item.id === data.default_template_id)?.text ??
+    savedTemplates.value[0]?.text ??
+    data?.templates[0]?.text ??
+    DEMO_TEMPLATES[locale.value]
+  );
+});
 
 const ticketText = ref('');
-const template = ref('');
+const template = ref(demoTemplate.value);
 const selectedDemoId = ref(demoTickets.value[0]?.id ?? '');
 
 const MAX_TICKET_TEXT_LENGTH = 4000;
@@ -71,13 +100,53 @@ function resetRouting(): void {
 }
 
 watch(ticketText, resetRouting);
+watch(template, () => {
+  processingResult.value = null;
+});
+watch(demoTickets, (items) => {
+  if (!items.some((item) => item.id === selectedDemoId.value))
+    selectedDemoId.value = items[0]?.id ?? '';
+});
+watch(savedTemplates, (items) => {
+  if (!items.some((item) => item.id === selectedTemplateId.value))
+    selectedTemplateId.value = items[0]?.id ?? '';
+});
+
+function applyWorkspace(state: WorkspaceState): void {
+  const previousDefault = demoTemplate.value;
+  workspace.value = state;
+  selectedTemplateId.value =
+    state.data.default_template_id ?? savedTemplates.value[0]?.id ?? '';
+  if (!template.value || template.value === previousDefault)
+    template.value = demoTemplate.value;
+  departments.value = state.data.departments;
+  resetRouting();
+}
+
+async function loadWorkspace(): Promise<void> {
+  workspaceError.value = null;
+  try {
+    applyWorkspace(await getWorkspace());
+  } catch (error: unknown) {
+    workspaceError.value = error;
+  }
+}
+
+function loadSavedTemplate(): void {
+  const selected = savedTemplates.value.find(
+    (item) => item.id === selectedTemplateId.value,
+  );
+  if (selected) template.value = selected.text;
+}
 
 async function loadDepartments(): Promise<void> {
   departmentsLoading.value = true;
   departmentsError.value = null;
 
   try {
-    departments.value = await getDepartments();
+    const loaded = await getDepartments();
+    if (JSON.stringify(loaded) !== JSON.stringify(departments.value)) resetRouting();
+    departments.value = loaded;
   } catch (error: unknown) {
     departmentsError.value = error;
   } finally {
@@ -178,7 +247,7 @@ async function submitDraft(): Promise<void> {
   }
 }
 
-onMounted(() => void loadDepartments());
+onMounted(() => void loadWorkspace());
 </script>
 
 <template>
@@ -234,7 +303,11 @@ onMounted(() => void loadDepartments());
 
         <div class="demo-toolbar">
           <label for="demo-ticket">{{ text.example }}</label>
-          <select id="demo-ticket" v-model="selectedDemoId" :disabled="routing">
+          <select
+            id="demo-ticket"
+            v-model="selectedDemoId"
+            :disabled="routing || processing"
+          >
             <option v-for="demo in demoTickets" :key="demo.id" :value="demo.id">
               {{ demo.label }}
             </option>
@@ -242,7 +315,7 @@ onMounted(() => void loadDepartments());
           <button
             class="secondary-button"
             type="button"
-            :disabled="routing"
+            :disabled="routing || processing"
             @click="loadDemo"
           >
             {{ text.loadExample }}
@@ -387,6 +460,29 @@ onMounted(() => void loadDepartments());
             </div>
           </div>
           <div class="template-toolbar">
+            <label v-if="savedTemplates.length" for="saved-template">{{
+              text.savedTemplates
+            }}</label>
+            <select
+              v-if="savedTemplates.length"
+              id="saved-template"
+              v-model="selectedTemplateId"
+              :disabled="processing || routing"
+            >
+              <option v-for="item in savedTemplates" :key="item.id" :value="item.id">
+                {{ item.name }}
+              </option>
+            </select>
+            <button
+              v-if="savedTemplates.length"
+              id="load-saved-template"
+              class="secondary-button"
+              type="button"
+              :disabled="processing || routing"
+              @click="loadSavedTemplate"
+            >
+              {{ text.loadSavedTemplate }}
+            </button>
             <button
               class="text-button"
               type="button"
@@ -442,6 +538,22 @@ onMounted(() => void loadDepartments());
       </section>
 
       <aside class="right-column">
+        <WorkspaceManager
+          :state="workspace"
+          :disabled="routing || processing"
+          @saved="applyWorkspace"
+        />
+        <p v-if="workspaceError" class="message error" role="alert">
+          {{ getErrorMessage(workspaceError) }}
+        </p>
+        <button
+          v-if="workspaceError"
+          class="text-button"
+          type="button"
+          @click="loadWorkspace"
+        >
+          {{ text.refresh }}
+        </button>
         <section class="panel departments-panel">
           <div class="section-heading">
             <span class="step">IT</span>

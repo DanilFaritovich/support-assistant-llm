@@ -6,6 +6,7 @@ from sqlalchemy.engine import make_url
 
 from app.core.config import settings
 from app.db.base import Base
+from app.db.models import department, workspace  # noqa: F401
 
 config = context.config
 

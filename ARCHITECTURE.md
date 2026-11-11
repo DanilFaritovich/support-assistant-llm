@@ -53,7 +53,8 @@ service before starting Uvicorn. The backend image does not hide migrations in
 its application command. Application startup creates the async database
 resources and idempotently adds missing demo departments from
 `backend/resources/departments.json`. Existing rows are not overwritten.
-`GET /api/departments` reads the ordered directory through the repository port.
+`GET /api/departments` reads the directory through the repository port, scoped
+to a guest snapshot when a valid cookie selects one.
 
 ### Ticket routing
 
@@ -69,7 +70,8 @@ resources and idempotently adds missing demo departments from
 The browser stores the proposed department locally and requires confirmation.
 A manual override changes that local ID without another LLM call.
 `POST /api/tickets/process` resolves the submitted final `department_id`,
-then the drafting service sends the actual department record, ticket text, and
+within the cookie-selected workspace, then the drafting service sends the actual
+department record, ticket text, and
 template through the drafting port. Ticket results are returned to the browser;
 they are not persisted.
 
@@ -111,6 +113,39 @@ credentials.
 `OPENROUTER_API_KEY` is read only by backend settings. It is never passed into
 the Vue build, persisted in the database, or intentionally logged.
 
+## Guest workspaces
+
+The public demo uses the existing seeded directory plus backend-owned localized
+examples/templates from `backend/resources/workspace.json`. Reads do not create
+private data. The first explicit settings save generates a 256-bit token in an
+HttpOnly, SameSite=Lax, Secure cookie scoped to `/api`; only a SHA-256 token hash
+is stored. Local HTTP Compose explicitly disables Secure.
+
+A guest workspace is a bounded settings aggregate, persisted as one validated
+JSON document in `guest_workspaces`, with a token-hash primary key, revision, and
+indexed expiry timestamp. The aggregate contains departments, example tickets,
+named templates, and a default-template reference. Independent entity tables
+are unnecessary for the current bounded settings use case. IDs are local to the
+aggregate; the backend never selects a workspace from a caller-supplied ID.
+
+`WorkspaceService` uses a workspace repository port and a public-directory port.
+The SQLAlchemy adapter atomically saves a whole document using revision comparison
+and owns that one transaction. A stale/missing revision or exhausted storage
+capacity returns HTTP 409. Creates enforce capacity with a single conditional
+insert, and concurrent edits cannot overwrite the same revision. Save/import/
+restore all use this boundary. The snapshot department repository resolves both
+LLM use cases against only the selected document; public-directory lookup is used
+only before personalization or after expiration.
+
+The document is limited to 15,000 UTF-8 bytes, 20 departments, 20 examples, and 10
+templates, retaining at least one department and template. The existing Nginx
+16 KiB body limit remains unchanged. Writes require a custom header, cross-site
+Fetch Metadata is rejected, and CORS is disabled. API responses are private/no-store.
+Guest tokens do not replace per-IP LLM quotas. Guest capacity defaults to 5,000
+spaces. Expiry defaults to 90 days from the last save; expired rows are ignored
+on reads and removed on subsequent writes. Cookie loss means loss of access;
+JSON export/import transfers settings without tokens, revisions, or accounts.
+
 ## Shared quota
 
 The application `LLMQuotaPort` is implemented by
@@ -134,7 +169,8 @@ does not connect synchronously to Loki or Grafana.
 
 ## Database
 
-SQLite stores only the department directory. Async SQLAlchemy provides sessions
+SQLite stores the public department directory and private guest workspace
+settings. Async SQLAlchemy provides sessions
 and the repository adapter; Alembic owns schema evolution. The local default is
 `backend/data/app.db`; Compose stores the database at `/app/data/app.db` in
 the `support-assistant-data` named volume.
@@ -156,8 +192,12 @@ canonical/hreflang metadata use that origin. Unknown Nginx paths return HTTP 404
 `App.vue` owns the
 short, linear workflow in local component state, so there is no global store.
 `src/api/tickets.ts` is the typed HTTP adapter, `src/types/ticket.ts` holds
-API types, and `src/demo.ts` holds fictional sample requests and the default
-template.
+API types, and `src/demo.ts` holds prerender placeholders for fictional sample
+requests and
+the default template. After mounting, `/api/workspace` supplies authoritative
+settings. `WorkspaceManager.vue` owns an editable draft, save/reload/error states,
+and confirmed import/restoration. The workflow owns fetched workspace state,
+filters examples/templates by language, and resets routing when settings change.
 
 Both language routes reuse the workflow component, preserving form data and
 results during client navigation. Copy lives in `src/messages.ts`; department
