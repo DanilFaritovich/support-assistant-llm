@@ -11,6 +11,7 @@ src/
 ├── App.vue                 # workflow state and user interface
 ├── api/tickets.ts          # typed HTTP client for relative /api routes
 ├── demo.ts                 # fictional tickets and generic template
+├── locale.ts               # typed English/Russian copy and language preference
 ├── types/ticket.ts         # API request/response types
 ├── style.css               # responsive global component styles
 ├── main.ts                 # Vue bootstrap
@@ -36,7 +37,7 @@ The client uses relative routes so the same bundle works in development and behi
 - `POST /api/tickets/route`
 - `POST /api/tickets/process`
 
-Non-successful responses use FastAPI's `detail` string when available and otherwise show a status-based fallback. Vite proxies `/api` to `127.0.0.1:8000` in local development; the production Nginx image proxies it to the Compose `backend` service.
+Non-successful responses become typed HTTP errors and are presented in the selected interface language, without displaying backend detail strings. Vite proxies `/api` to `127.0.0.1:8000` in local development; the production Nginx image proxies it to the Compose `backend` service.
 
 No OpenRouter key or LLM configuration is compiled into the frontend.
 Production Nginx applies a general per-client anti-flood limit and a 16 KiB
@@ -45,7 +46,13 @@ Redis quota for LLM operations.
 
 ## Demo data
 
-`src/demo.ts` contains three fictional requests and one generic description template. Users can load an example, edit every field, clear it, or enter their own request. Department data comes from the backend database rather than being duplicated in the UI.
+`src/demo.ts` contains three fictional requests and one generic description template in each supported language. Users can load an example, edit every field, clear it, or enter their own request. Department data comes from the backend database rather than being duplicated in the UI.
+
+## Interface language
+
+The header provides English and Russian buttons. A saved `support-assistant.locale` preference takes priority; otherwise a Russian browser language selects Russian and other browser languages select English. Switching works even when browser storage is unavailable. The document language and title follow the selection.
+
+Switching language preserves entered text, the confirmed department, and generated results. Loading an example or template uses the current language. Department names/descriptions and LLM results retain the content supplied by the backend; the interface preference does not change the API or request a particular generation language.
 
 ## Local development
 

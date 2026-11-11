@@ -8,26 +8,18 @@ import type {
 
 const API_BASE_URL = '/api';
 
-async function readResponse<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    const body: unknown = await response.json().catch(() => null);
+export class ApiError extends Error {
+  readonly status: number;
 
-    if (
-      body !== null &&
-      typeof body === 'object' &&
-      'detail' in body &&
-      typeof body.detail === 'string'
-    ) {
-      throw new Error(body.detail);
-    }
-
-    if (response.status === 422) {
-      throw new Error('Проверьте введённые данные.');
-    }
-
-    throw new Error(`API request failed: HTTP ${response.status}`);
+  constructor(status: number) {
+    super(`API request failed: HTTP ${status}`);
+    this.status = status;
+    this.name = 'ApiError';
   }
+}
 
+async function readResponse<T>(response: Response): Promise<T> {
+  if (!response.ok) throw new ApiError(response.status);
   return (await response.json()) as T;
 }
 

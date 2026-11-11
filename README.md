@@ -12,6 +12,7 @@ Support requests often arrive as free-form text. A support agent must identify t
 
 ## Features
 
+- English and Russian interface, examples, and templates with a saved language preference.
 - LLM-assisted ticket title and IT-department routing.
 - Visible routing rationale and an explicit confirmation step.
 - Manual department override with no second LLM request.
