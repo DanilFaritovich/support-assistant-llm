@@ -11,7 +11,12 @@ src/
 ├── App.vue                 # workflow state and user interface
 ├── api/tickets.ts          # typed HTTP client for relative /api routes
 ├── demo.ts                 # fictional tickets and generic template
-├── locale.ts               # typed English/Russian copy and language preference
+├── locale.ts               # URL locale and saved preference for root visits
+├── messages.ts             # typed English/Russian interface and public copy
+├── router.ts               # language routes; same workflow component across locales
+├── app.ts                  # shared client/server application factory
+├── entry-server.ts         # build-time Vue rendering without API calls
+├── seo.ts                  # public origin, canonical/hreflang and metadata
 ├── types/ticket.ts         # API request/response types
 ├── style.css               # responsive global component styles
 ├── main.ts                 # Vue bootstrap
@@ -50,9 +55,23 @@ Redis quota for LLM operations.
 
 ## Interface language
 
-The header provides English and Russian buttons. A saved `support-assistant.locale` preference takes priority; otherwise a Russian browser language selects Russian and other browser languages select English. Switching works even when browser storage is unavailable. The document language and title follow the selection.
+The header provides English and Russian links to `/en/` and `/ru/`. The URL determines the language and takes priority over browser preferences. On a root visit, the client selects the saved `support-assistant.locale` preference, then Russian for a Russian browser language, or English otherwise. Without JavaScript, the root provides links to both languages. Switching works even when browser storage is unavailable. Vue Router preserves the workflow component across language changes and browser history navigation.
 
 Switching language preserves entered text, the confirmed department, and generated results. Loading an example or template uses the current language. Department names/descriptions and LLM results retain the content supplied by the backend; the interface preference does not change the API or request a particular generation language.
+
+## Static rendering and SEO
+
+`npm run build` builds browser assets and a temporary server bundle, then `scripts/build.mjs` renders the initial Vue interface into `dist/en/index.html` and `dist/ru/index.html`. It also writes the language chooser, `sitemap.xml` and `robots.txt`. This rendering makes no backend or OpenRouter calls and contains no user input. The runtime remains static Nginx; no Node server is required. Vue hydrates the localized HTML and fetches departments after mounting.
+
+Each language has its own title, description and canonical URL, plus reciprocal `hreflang` links for English, Russian and `x-default`. The confirmed public origin is `https://support.danil-miftakhov.dev`; this is a build contract, not evidence that DNS/TLS or deployment is configured. `VITE_SITE_ORIGIN` overrides it at build time and must be an HTTPS origin without a path, query or credentials. HTTP localhost origins are allowed for local preview:
+
+```bash
+VITE_SITE_ORIGIN=http://localhost:8080 npm run build
+```
+
+Compose forwards the same variable as a frontend build argument. The release workflow reads the public repository variable `VITE_SITE_ORIGIN`, falling back to the confirmed origin. Changing it requires rebuilding the image. It is not a backend runtime setting.
+
+Production Nginx serves actual files, normalizes `/en` and `/ru` to trailing-slash URLs, and returns HTTP 404 for unknown paths. API proxying is unchanged. The build includes checks of the generated HTML and sitemap; component tests cover URL precedence, preserved form state, metadata updates and hydration.
 
 ## Local development
 

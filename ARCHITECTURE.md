@@ -144,11 +144,24 @@ validated records rather than SQLAlchemy models.
 
 ## Frontend
 
-`frontend/src/main.ts` bootstraps the Vue application. `App.vue` owns the
+`frontend/src/main.ts` hydrates prerendered language pages through a shared
+application factory and Vue Router. `/en/` and `/ru/` determine interface language;
+the root uses a saved/browser preference when JavaScript is available and offers
+language links otherwise. Build-time Vue rendering produces localized HTML and
+SEO metadata without backend calls; Nginx serves these files without a Node runtime.
+The public origin is a validated build input (`VITE_SITE_ORIGIN`), defaulting to
+the confirmed `https://support.danil-miftakhov.dev`. Sitemap and reciprocal
+canonical/hreflang metadata use that origin. Unknown Nginx paths return HTTP 404.
+
+`App.vue` owns the
 short, linear workflow in local component state, so there is no global store.
 `src/api/tickets.ts` is the typed HTTP adapter, `src/types/ticket.ts` holds
 API types, and `src/demo.ts` holds fictional sample requests and the default
 template.
+
+Both language routes reuse the workflow component, preserving form data and
+results during client navigation. Copy lives in `src/messages.ts`; department
+records and LLM output remain authoritative backend content.
 
 Changing the ticket invalidates prior routing/drafting output. The frontend
 does not contain department master data or OpenRouter configuration.

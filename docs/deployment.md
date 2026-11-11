@@ -33,6 +33,13 @@ build application source. `latest` is not used as production state.
 
 ## GitHub `production` Environment
 
+The frontend's confirmed public origin is `https://support.danil-miftakhov.dev`.
+The build uses this default for localized canonical/hreflang URLs and sitemap.
+An optional public **repository** variable `VITE_SITE_ORIGIN` overrides it in
+the image-publishing job; this is separate from backend runtime secrets and
+requires a new image build. DNS, TLS and manager admission for this hostname
+remain deployment prerequisites, not completed operations.
+
 Create a protected Environment named `production`. Restrict it to `main` and
 add reviewers if the deployment requires manual approval.
 

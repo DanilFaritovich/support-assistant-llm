@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import { RouterLink } from 'vue-router';
 
 import { ApiError, getDepartments, processTicket, routeTicket } from './api/tickets';
 import { DEMO_TEMPLATES, DEMO_TICKETS_BY_LOCALE } from './demo';
@@ -10,7 +11,7 @@ import type {
   TicketRoutingResponse,
 } from './types/ticket';
 
-const { locale, text, setLocale } = useLocale();
+const { locale, text, rememberLocale } = useLocale();
 const demoTickets = computed(() => DEMO_TICKETS_BY_LOCALE[locale.value]);
 const demoTemplate = computed(() => DEMO_TEMPLATES[locale.value]);
 
@@ -192,26 +193,34 @@ onMounted(() => void loadDepartments());
       </div>
       <div class="header-controls">
         <span class="status-label">{{ text.demoVersion }}</span>
-        <div class="language-switch" role="group" :aria-label="text.language">
-          <button
-            type="button"
+        <nav class="language-switch" :aria-label="text.language">
+          <RouterLink
+            to="/en/"
             lang="en"
-            :aria-pressed="locale === 'en'"
-            @click="setLocale('en')"
+            hreflang="en"
+            :aria-current="locale === 'en' ? 'page' : undefined"
+            @click="rememberLocale('en')"
           >
             English
-          </button>
-          <button
-            type="button"
+          </RouterLink>
+          <RouterLink
+            to="/ru/"
             lang="ru"
-            :aria-pressed="locale === 'ru'"
-            @click="setLocale('ru')"
+            hreflang="ru"
+            :aria-current="locale === 'ru' ? 'page' : undefined"
+            @click="rememberLocale('ru')"
           >
             Русский
-          </button>
-        </div>
+          </RouterLink>
+        </nav>
       </div>
     </header>
+
+    <section class="panel about-panel" aria-labelledby="about-title">
+      <h2 id="about-title">{{ text.aboutTitle }}</h2>
+      <p>{{ text.aboutText }}</p>
+      <p>{{ text.privacyNote }}</p>
+    </section>
 
     <main class="layout">
       <section class="panel editor-panel">

@@ -12,7 +12,8 @@ Support requests often arrive as free-form text. A support agent must identify t
 
 ## Features
 
-- English and Russian interface, examples, and templates with a saved language preference.
+- English and Russian pages at `/en/` and `/ru/`, with localized examples, templates, and a saved language preference.
+- Prerendered HTML, localized metadata, canonical/hreflang links, and a sitemap for `https://support.danil-miftakhov.dev` (deployment pending).
 - LLM-assisted ticket title and IT-department routing.
 - Visible routing rationale and an explicit confirmation step.
 - Manual department override with no second LLM request.

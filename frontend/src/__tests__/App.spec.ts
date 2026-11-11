@@ -1,11 +1,22 @@
 import { flushPromises, mount } from '@vue/test-utils';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import App from '../App.vue';
+import { createMemoryHistory } from 'vue-router';
+
+import { Root } from '../app';
+import { createSupportRouter } from '../router';
 import { ApiError, getDepartments, processTicket, routeTicket } from '../api/tickets';
 import { DEMO_TEMPLATES, DEMO_TICKETS_BY_LOCALE } from '../demo';
 import { LOCALE_STORAGE_KEY } from '../locale';
 import type { Department } from '../types/ticket';
+
+async function mountApp(path = '/') {
+  const router = createSupportRouter(createMemoryHistory());
+  await router.push(path);
+  await router.isReady();
+  const wrapper = mount(Root, { global: { plugins: [router] } });
+  return { wrapper, router };
+}
 
 const DEMO_TEMPLATE = DEMO_TEMPLATES.ru;
 const DEMO_TICKETS = DEMO_TICKETS_BY_LOCALE.ru;
@@ -51,7 +62,7 @@ describe('App', () => {
   });
 
   it('loads departments and a complete fictional demo example', async () => {
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
 
     await wrapper.find('#demo-ticket').setValue(DEMO_TICKETS[1]?.id);
@@ -72,7 +83,7 @@ describe('App', () => {
   });
 
   it('exposes the backend input limits in the text areas', async () => {
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
 
     expect(wrapper.get('#ticket-text').attributes('maxlength')).toBe('4000');
@@ -84,7 +95,7 @@ describe('App', () => {
   });
 
   it('requires confirmation before showing description generation', async () => {
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
     await route(wrapper);
 
@@ -99,7 +110,7 @@ describe('App', () => {
   });
 
   it('generates a description with the confirmed suggested department', async () => {
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
     await route(wrapper);
     await wrapper.get('#confirm-department').trigger('click');
@@ -118,7 +129,7 @@ describe('App', () => {
   });
 
   it('changes department locally without another routing request', async () => {
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
     await route(wrapper);
 
@@ -139,7 +150,7 @@ describe('App', () => {
   });
 
   it('clears data and resets a completed workflow', async () => {
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
     await route(wrapper);
     await wrapper.get('#confirm-department').trigger('click');
@@ -152,7 +163,7 @@ describe('App', () => {
 
   it('shows routing and drafting errors without losing recoverable state', async () => {
     vi.mocked(routeTicket).mockRejectedValueOnce(new Error('Free models unavailable.'));
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
     await route(wrapper);
     expect(wrapper.get('#route-form [role="alert"]').text()).toContain(
@@ -187,11 +198,11 @@ describe('language switching', () => {
 
   it('uses browser language and falls back to English for other languages', async () => {
     vi.spyOn(navigator, 'language', 'get').mockReturnValue('ru-RU');
-    const russian = mount(App);
+    const { wrapper: russian } = await mountApp();
     expect(russian.get('h1').text()).toBe('Обработка IT-заявок');
     russian.unmount();
     vi.spyOn(navigator, 'language', 'get').mockReturnValue('de-DE');
-    const english = mount(App);
+    const { wrapper: english } = await mountApp();
     expect(english.get('h1').text()).toBe('IT ticket processing');
     expect(document.documentElement.lang).toBe('en');
     english.unmount();
@@ -200,12 +211,13 @@ describe('language switching', () => {
   it('preserves the workflow and custom input, persists the choice and loads localized examples', async () => {
     localStorage.setItem(LOCALE_STORAGE_KEY, 'ru');
     vi.mocked(routeTicket).mockResolvedValue(routingResponse);
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
     await route(wrapper);
     await wrapper.get('#confirm-department').trigger('click');
     await wrapper.get('#description-template').setValue('My custom template');
-    await wrapper.get('button[lang="en"]').trigger('click');
+    await wrapper.get('a[lang="en"]').trigger('click');
+    await flushPromises();
     expect(wrapper.get('h1').text()).toBe('IT ticket processing');
     expect(document.title).toContain('IT ticket processing');
     expect(document.documentElement.lang).toBe('en');
@@ -225,7 +237,7 @@ describe('language switching', () => {
     );
     await flushPromises();
     wrapper.unmount();
-    const restored = mount(App);
+    const { wrapper: restored } = await mountApp();
     expect(restored.get('h1').text()).toBe('IT ticket processing');
     restored.unmount();
   });
@@ -233,12 +245,37 @@ describe('language switching', () => {
   it('translates an existing API error when switching languages', async () => {
     localStorage.setItem(LOCALE_STORAGE_KEY, 'ru');
     vi.mocked(routeTicket).mockRejectedValue(new ApiError(429));
-    const wrapper = mount(App);
+    const { wrapper } = await mountApp();
     await flushPromises();
     await route(wrapper);
     expect(wrapper.get('[role="alert"]').text()).toContain('Слишком много запросов');
-    await wrapper.get('button[lang="en"]').trigger('click');
+    await wrapper.get('a[lang="en"]').trigger('click');
+    await flushPromises();
     expect(wrapper.get('[role="alert"]').text()).toContain('Too many requests');
+    wrapper.unmount();
+  });
+
+  it('uses the URL over saved preferences and keeps the form through history navigation', async () => {
+    localStorage.setItem(LOCALE_STORAGE_KEY, 'ru');
+    const { wrapper, router } = await mountApp('/en/');
+    expect(wrapper.get('h1').text()).toBe('IT ticket processing');
+    expect(wrapper.get('a[lang="ru"]').attributes('href')).toBe('/ru/');
+    await wrapper.get('#ticket-text').setValue('Keep this draft');
+    await wrapper.get('a[lang="ru"]').trigger('click');
+    await flushPromises();
+    expect(router.currentRoute.value.path).toBe('/ru/');
+    expect(
+      document.head.querySelector('link[rel="canonical"]')?.getAttribute('href'),
+    ).toBe('https://support.danil-miftakhov.dev/ru/');
+    router.back();
+    await flushPromises();
+    expect(wrapper.get('h1').text()).toBe('IT ticket processing');
+    expect((wrapper.get('#ticket-text').element as HTMLTextAreaElement).value).toBe(
+      'Keep this draft',
+    );
+    expect(
+      document.head.querySelector('link[rel="canonical"]')?.getAttribute('href'),
+    ).toBe('https://support.danil-miftakhov.dev/en/');
     wrapper.unmount();
   });
 
@@ -249,8 +286,9 @@ describe('language switching', () => {
     vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
       throw new Error('disabled');
     });
-    const wrapper = mount(App);
-    await wrapper.get('button[lang="ru"]').trigger('click');
+    const { wrapper } = await mountApp();
+    await wrapper.get('a[lang="ru"]').trigger('click');
+    await flushPromises();
     expect(wrapper.get('h1').text()).toBe('Обработка IT-заявок');
     wrapper.unmount();
   });
