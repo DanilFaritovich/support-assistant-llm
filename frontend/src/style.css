@@ -416,3 +416,49 @@ h2 {
   padding-top: 26px;
   border-top: 1px solid #edf0f5;
 }
+
+.header-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.language-switch {
+  display: flex;
+  gap: 4px;
+}
+
+.language-switch a {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid #b9cbe5;
+  border-radius: 10px;
+  background: #fff;
+  color: #326dcd;
+}
+
+.language-switch a[aria-current='page'] {
+  background: #326dcd;
+  color: #fff;
+}
+
+.language-switch a:focus-visible {
+  outline: 3px solid #578ce0;
+  outline-offset: 2px;
+}
+
+.about-panel {
+  margin-bottom: 22px;
+}
+.about-panel p {
+  color: #667588;
+  line-height: 1.6;
+}
+.about-panel p:last-child {
+  margin-bottom: 0;
+  font-size: 13px;
+}

@@ -8,7 +8,8 @@ RUN npm ci
 
 COPY . .
 
-RUN npm run build
+ARG VITE_SITE_ORIGIN=https://support.danil-miftakhov.dev
+RUN VITE_SITE_ORIGIN="$VITE_SITE_ORIGIN" npm run build
 
 
 FROM nginx:stable-alpine

@@ -1,36 +1,42 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, ref, shallowRef, watch } from 'vue';
+import { RouterLink } from 'vue-router';
 
-import { getDepartments, processTicket, routeTicket } from './api/tickets';
-import { DEMO_TEMPLATE, DEMO_TICKETS } from './demo';
+import { ApiError, getDepartments, processTicket, routeTicket } from './api/tickets';
+import { DEMO_TEMPLATES, DEMO_TICKETS_BY_LOCALE } from './demo';
+import { useLocale } from './locale';
 import type {
   Department,
   TicketProcessingResponse,
   TicketRoutingResponse,
 } from './types/ticket';
 
+const { locale, text, rememberLocale } = useLocale();
+const demoTickets = computed(() => DEMO_TICKETS_BY_LOCALE[locale.value]);
+const demoTemplate = computed(() => DEMO_TEMPLATES[locale.value]);
+
 const ticketText = ref('');
 const template = ref('');
-const selectedDemoId = ref(DEMO_TICKETS[0]?.id ?? '');
+const selectedDemoId = ref(demoTickets.value[0]?.id ?? '');
 
 const MAX_TICKET_TEXT_LENGTH = 4000;
 const MAX_TEMPLATE_LENGTH = 2000;
 
 const departments = ref<Department[]>([]);
 const departmentsLoading = ref(false);
-const departmentsError = ref('');
+const departmentsError = shallowRef<unknown>(null);
 
 const routing = ref(false);
-const routingError = ref('');
+const routingError = shallowRef<unknown>(null);
 const routingResult = ref<TicketRoutingResponse | null>(null);
 
 const editingDepartment = ref(false);
 const manualDepartmentId = ref<number | null>(null);
 const confirmedDepartmentId = ref<number | null>(null);
-const departmentSelectionError = ref('');
+const departmentSelectionError = shallowRef<unknown>(null);
 
 const processing = ref(false);
-const processingError = ref('');
+const processingError = shallowRef<unknown>(null);
 const processingResult = ref<TicketProcessingResponse | null>(null);
 
 const confirmedDepartment = computed(() =>
@@ -38,7 +44,19 @@ const confirmedDepartment = computed(() =>
 );
 
 function getErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'Произошла неизвестная ошибка.';
+  if (error instanceof ApiError) {
+    if (error.status === 422) return text.value.validationError;
+    if (error.status === 429) return text.value.quotaError;
+    if (error.status === 413) return text.value.largeRequestError;
+    if (error.status === 404) return text.value.notFoundError;
+    if (error.status >= 500) return text.value.unavailableError;
+    return `${text.value.apiError} ${error.status}`;
+  }
+  if (typeof error === 'string' && error in text.value) {
+    return text.value[error as keyof typeof text.value];
+  }
+  if (error instanceof TypeError) return text.value.networkError;
+  return error instanceof Error ? error.message : text.value.unknownError;
 }
 
 function resetRouting(): void {
@@ -47,31 +65,31 @@ function resetRouting(): void {
   manualDepartmentId.value = null;
   editingDepartment.value = false;
   processingResult.value = null;
-  routingError.value = '';
-  departmentSelectionError.value = '';
-  processingError.value = '';
+  routingError.value = null;
+  departmentSelectionError.value = null;
+  processingError.value = null;
 }
 
 watch(ticketText, resetRouting);
 
 async function loadDepartments(): Promise<void> {
   departmentsLoading.value = true;
-  departmentsError.value = '';
+  departmentsError.value = null;
 
   try {
     departments.value = await getDepartments();
   } catch (error: unknown) {
-    departmentsError.value = getErrorMessage(error);
+    departmentsError.value = error;
   } finally {
     departmentsLoading.value = false;
   }
 }
 
 function loadDemo(): void {
-  const demo = DEMO_TICKETS.find((item) => item.id === selectedDemoId.value);
+  const demo = demoTickets.value.find((item) => item.id === selectedDemoId.value);
   if (demo) {
     ticketText.value = demo.ticketText;
-    template.value = DEMO_TEMPLATE;
+    template.value = demoTemplate.value;
   }
 }
 
@@ -86,7 +104,7 @@ async function submitRouting(): Promise<void> {
 
   resetRouting();
   if (!ticketText.value.trim()) {
-    routingError.value = 'Введите текст заявки.';
+    routingError.value = 'enterTicket';
     return;
   }
 
@@ -95,7 +113,7 @@ async function submitRouting(): Promise<void> {
     routingResult.value = await routeTicket({ ticket_text: ticketText.value });
     manualDepartmentId.value = routingResult.value.department_id;
   } catch (error: unknown) {
-    routingError.value = getErrorMessage(error);
+    routingError.value = error;
   } finally {
     routing.value = false;
   }
@@ -105,7 +123,7 @@ function confirmSuggestedDepartment(): void {
   if (!routingResult.value) return;
   confirmedDepartmentId.value = routingResult.value.department_id;
   editingDepartment.value = false;
-  departmentSelectionError.value = '';
+  departmentSelectionError.value = null;
   processingResult.value = null;
 }
 
@@ -116,7 +134,7 @@ function startDepartmentChange(): void {
   editingDepartment.value = true;
   confirmedDepartmentId.value = null;
   processingResult.value = null;
-  processingError.value = '';
+  processingError.value = null;
 }
 
 function confirmManualDepartment(): void {
@@ -124,13 +142,13 @@ function confirmManualDepartment(): void {
     (department) => department.id === manualDepartmentId.value,
   );
   if (!exists || manualDepartmentId.value === null) {
-    departmentSelectionError.value = 'Выберите доступный IT-департамент.';
+    departmentSelectionError.value = 'selectDepartment';
     return;
   }
 
   confirmedDepartmentId.value = manualDepartmentId.value;
   editingDepartment.value = false;
-  departmentSelectionError.value = '';
+  departmentSelectionError.value = null;
   processingResult.value = null;
 }
 
@@ -139,10 +157,10 @@ async function submitDraft(): Promise<void> {
     return;
   }
 
-  processingError.value = '';
+  processingError.value = null;
   processingResult.value = null;
   if (!ticketText.value.trim() || !template.value.trim()) {
-    processingError.value = 'Заполните текст заявки и шаблон.';
+    processingError.value = 'fillFields';
     return;
   }
 
@@ -154,7 +172,7 @@ async function submitDraft(): Promise<void> {
       template: template.value,
     });
   } catch (error: unknown) {
-    processingError.value = getErrorMessage(error);
+    processingError.value = error;
   } finally {
     processing.value = false;
   }
@@ -168,29 +186,56 @@ onMounted(() => void loadDepartments());
     <header class="page-header">
       <div>
         <p class="eyebrow">Support Assistant</p>
-        <h1>Обработка IT-заявок</h1>
+        <h1>{{ text.title }}</h1>
         <p class="subtitle">
-          Определите подходящий департамент, подтвердите или измените выбор и создайте
-          структурированное описание заявки.
+          {{ text.subtitle }}
         </p>
       </div>
-      <span class="status-label">Демонстрационная версия</span>
+      <div class="header-controls">
+        <span class="status-label">{{ text.demoVersion }}</span>
+        <nav class="language-switch" :aria-label="text.language">
+          <RouterLink
+            to="/en/"
+            lang="en"
+            hreflang="en"
+            :aria-current="locale === 'en' ? 'page' : undefined"
+            @click="rememberLocale('en')"
+          >
+            English
+          </RouterLink>
+          <RouterLink
+            to="/ru/"
+            lang="ru"
+            hreflang="ru"
+            :aria-current="locale === 'ru' ? 'page' : undefined"
+            @click="rememberLocale('ru')"
+          >
+            Русский
+          </RouterLink>
+        </nav>
+      </div>
     </header>
+
+    <section class="panel about-panel" aria-labelledby="about-title">
+      <h2 id="about-title">{{ text.aboutTitle }}</h2>
+      <p>{{ text.aboutText }}</p>
+      <p>{{ text.privacyNote }}</p>
+    </section>
 
     <main class="layout">
       <section class="panel editor-panel">
         <div class="section-heading">
           <span class="step">01</span>
           <div>
-            <h2>Исходная заявка</h2>
-            <p>Загрузите вымышленный пример или введите собственный текст.</p>
+            <h2>{{ text.sourceTicket }}</h2>
+            <p>{{ text.sourceHelp }}</p>
           </div>
         </div>
 
         <div class="demo-toolbar">
-          <label for="demo-ticket">Готовый пример</label>
+          <label for="demo-ticket">{{ text.example }}</label>
           <select id="demo-ticket" v-model="selectedDemoId" :disabled="routing">
-            <option v-for="demo in DEMO_TICKETS" :key="demo.id" :value="demo.id">
+            <option v-for="demo in demoTickets" :key="demo.id" :value="demo.id">
               {{ demo.label }}
             </option>
           </select>
@@ -200,7 +245,7 @@ onMounted(() => void loadDepartments());
             :disabled="routing"
             @click="loadDemo"
           >
-            Загрузить пример
+            {{ text.loadExample }}
           </button>
           <button
             class="text-button"
@@ -208,29 +253,29 @@ onMounted(() => void loadDepartments());
             :disabled="routing || processing"
             @click="clearForm"
           >
-            Очистить
+            {{ text.clear }}
           </button>
         </div>
 
         <form id="route-form" class="ticket-form" @submit.prevent="submitRouting">
-          <label for="ticket-text">Текст заявки</label>
+          <label for="ticket-text">{{ text.ticketText }}</label>
           <textarea
             id="ticket-text"
             v-model="ticketText"
             rows="9"
             :maxlength="MAX_TICKET_TEXT_LENGTH"
-            placeholder="Опишите проблему, наблюдаемый и ожидаемый результат..."
+            :placeholder="text.ticketPlaceholder"
             :disabled="routing || processing"
           />
           <p v-if="routingError" class="message error" role="alert">
-            {{ routingError }}
+            {{ getErrorMessage(routingError) }}
           </p>
           <button
             class="primary-button"
             type="submit"
             :disabled="routing || processing || !ticketText.trim()"
           >
-            {{ routing ? 'Определяем департамент…' : 'Определить департамент' }}
+            {{ routing ? text.routing : text.route }}
           </button>
         </form>
 
@@ -238,23 +283,23 @@ onMounted(() => void loadDepartments());
           <div class="section-heading">
             <span class="step">02</span>
             <div>
-              <h2>Предложенная маршрутизация</h2>
-              <p>Проверьте предложение модели перед генерацией описания.</p>
+              <h2>{{ text.routingTitle }}</h2>
+              <p>{{ text.routingHelp }}</p>
             </div>
           </div>
 
           <div class="result-content">
             <div class="result-field">
-              <span class="field-label">Название</span>
+              <span class="field-label">{{ text.ticketTitle }}</span>
               <h3>{{ routingResult.title }}</h3>
             </div>
             <div class="result-field">
-              <span class="field-label">Предложенный IT-департамент</span>
+              <span class="field-label">{{ text.suggestedDepartment }}</span>
               <strong>{{ routingResult.department_name }}</strong>
               <span class="muted">ID: {{ routingResult.department_id }}</span>
             </div>
             <div class="result-field">
-              <span class="field-label">Обоснование выбора</span>
+              <span class="field-label">{{ text.reasoning }}</span>
               <p class="preserve-lines">{{ routingResult.reasoning }}</p>
             </div>
           </div>
@@ -269,7 +314,7 @@ onMounted(() => void loadDepartments());
               type="button"
               @click="confirmSuggestedDepartment"
             >
-              Подтвердить
+              {{ text.confirm }}
             </button>
             <button
               id="change-department"
@@ -278,7 +323,7 @@ onMounted(() => void loadDepartments());
               :disabled="departmentsLoading || departments.length === 0"
               @click="startDepartmentChange"
             >
-              Изменить
+              {{ text.change }}
             </button>
           </div>
 
@@ -288,7 +333,7 @@ onMounted(() => void loadDepartments());
             class="ticket-form department-form"
             @submit.prevent="confirmManualDepartment"
           >
-            <label for="department-select">IT-департамент</label>
+            <label for="department-select">{{ text.department }}</label>
             <select
               id="department-select"
               v-model="manualDepartmentId"
@@ -303,22 +348,23 @@ onMounted(() => void loadDepartments());
               </option>
             </select>
             <p v-if="departmentSelectionError" class="message error" role="alert">
-              {{ departmentSelectionError }}
+              {{ getErrorMessage(departmentSelectionError) }}
             </p>
             <button
               class="primary-button"
               type="submit"
               :disabled="processing || manualDepartmentId === null"
             >
-              Подтвердить выбор
+              {{ text.confirmSelection }}
             </button>
           </form>
 
           <div v-if="confirmedDepartmentId !== null" class="confirmation-card">
             <div>
-              <span class="field-label">Итоговый выбор</span>
+              <span class="field-label">{{ text.finalSelection }}</span>
               <strong>{{
-                confirmedDepartment?.name ?? `Department #${confirmedDepartmentId}`
+                confirmedDepartment?.name ??
+                `${text.departmentFallback} #${confirmedDepartmentId}`
               }}</strong>
             </div>
             <button
@@ -327,7 +373,7 @@ onMounted(() => void loadDepartments());
               :disabled="processing"
               @click="startDepartmentChange"
             >
-              Изменить
+              {{ text.change }}
             </button>
           </div>
         </section>
@@ -336,8 +382,8 @@ onMounted(() => void loadDepartments());
           <div class="section-heading">
             <span class="step">03</span>
             <div>
-              <h2>Шаблон описания</h2>
-              <p>Используйте демонстрационный шаблон или измените его.</p>
+              <h2>{{ text.templateTitle }}</h2>
+              <p>{{ text.templateHelp }}</p>
             </div>
           </div>
           <div class="template-toolbar">
@@ -345,9 +391,9 @@ onMounted(() => void loadDepartments());
               class="text-button"
               type="button"
               :disabled="processing"
-              @click="template = DEMO_TEMPLATE"
+              @click="template = demoTemplate"
             >
-              Загрузить шаблон
+              {{ text.loadTemplate }}
             </button>
             <button
               class="text-button"
@@ -355,28 +401,28 @@ onMounted(() => void loadDepartments());
               :disabled="processing || !template"
               @click="template = ''"
             >
-              Очистить шаблон
+              {{ text.clearTemplate }}
             </button>
           </div>
           <form id="draft-form" class="ticket-form" @submit.prevent="submitDraft">
-            <label for="description-template">Шаблон</label>
+            <label for="description-template">{{ text.template }}</label>
             <textarea
               id="description-template"
               v-model="template"
               rows="8"
               :maxlength="MAX_TEMPLATE_LENGTH"
-              placeholder="Введите структуру будущего описания..."
+              :placeholder="text.templatePlaceholder"
               :disabled="routing || processing"
             />
             <p v-if="processingError" class="message error" role="alert">
-              {{ processingError }}
+              {{ getErrorMessage(processingError) }}
             </p>
             <button
               class="primary-button"
               type="submit"
               :disabled="routing || processing || !template.trim()"
             >
-              {{ processing ? 'Генерируем описание…' : 'Сгенерировать описание' }}
+              {{ processing ? text.processing : text.process }}
             </button>
           </form>
         </section>
@@ -385,8 +431,8 @@ onMounted(() => void loadDepartments());
           <div class="section-heading">
             <span class="step">04</span>
             <div>
-              <h2>Готовое описание</h2>
-              <p>Результат с учётом итогового департамента.</p>
+              <h2>{{ text.resultTitle }}</h2>
+              <p>{{ text.resultHelp }}</p>
             </div>
           </div>
           <pre id="draft-description" class="description-output">{{
@@ -400,27 +446,29 @@ onMounted(() => void loadDepartments());
           <div class="section-heading">
             <span class="step">IT</span>
             <div>
-              <h2>Демонстрационные департаменты</h2>
-              <p>Справочник, доступный для ручного выбора.</p>
+              <h2>{{ text.departmentsTitle }}</h2>
+              <p>{{ text.departmentsHelp }}</p>
             </div>
           </div>
           <div class="departments-toolbar">
-            <span>{{ departments.length }} доступно</span>
+            <span>{{ departments.length }} {{ text.available }}</span>
             <button
               class="text-button"
               type="button"
               :disabled="departmentsLoading"
               @click="loadDepartments"
             >
-              {{ departmentsLoading ? 'Загрузка…' : 'Обновить' }}
+              {{ departmentsLoading ? text.loading : text.refresh }}
             </button>
           </div>
           <p v-if="departmentsError" class="message error" role="alert">
-            {{ departmentsError }}
+            {{ getErrorMessage(departmentsError) }}
           </p>
-          <p v-else-if="departmentsLoading" class="muted">Загружаем департаменты…</p>
+          <p v-else-if="departmentsLoading" class="muted">
+            {{ text.loadingDepartments }}
+          </p>
           <p v-else-if="departments.length === 0" class="muted">
-            В справочнике пока нет департаментов.
+            {{ text.noDepartments }}
           </p>
           <ul v-else class="department-list">
             <li

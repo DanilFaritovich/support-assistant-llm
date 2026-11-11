@@ -11,6 +11,12 @@ src/
 ├── App.vue                 # workflow state and user interface
 ├── api/tickets.ts          # typed HTTP client for relative /api routes
 ├── demo.ts                 # fictional tickets and generic template
+├── locale.ts               # URL locale and saved preference for root visits
+├── messages.ts             # typed English/Russian interface and public copy
+├── router.ts               # language routes; same workflow component across locales
+├── app.ts                  # shared client/server application factory
+├── entry-server.ts         # build-time Vue rendering without API calls
+├── seo.ts                  # public origin, canonical/hreflang and metadata
 ├── types/ticket.ts         # API request/response types
 ├── style.css               # responsive global component styles
 ├── main.ts                 # Vue bootstrap
@@ -36,7 +42,7 @@ The client uses relative routes so the same bundle works in development and behi
 - `POST /api/tickets/route`
 - `POST /api/tickets/process`
 
-Non-successful responses use FastAPI's `detail` string when available and otherwise show a status-based fallback. Vite proxies `/api` to `127.0.0.1:8000` in local development; the production Nginx image proxies it to the Compose `backend` service.
+Non-successful responses become typed HTTP errors and are presented in the selected interface language, without displaying backend detail strings. Vite proxies `/api` to `127.0.0.1:8000` in local development; the production Nginx image proxies it to the Compose `backend` service.
 
 No OpenRouter key or LLM configuration is compiled into the frontend.
 Production Nginx applies a general per-client anti-flood limit and a 16 KiB
@@ -45,7 +51,27 @@ Redis quota for LLM operations.
 
 ## Demo data
 
-`src/demo.ts` contains three fictional requests and one generic description template. Users can load an example, edit every field, clear it, or enter their own request. Department data comes from the backend database rather than being duplicated in the UI.
+`src/demo.ts` contains three fictional requests and one generic description template in each supported language. Users can load an example, edit every field, clear it, or enter their own request. Department data comes from the backend database rather than being duplicated in the UI.
+
+## Interface language
+
+The header provides English and Russian links to `/en/` and `/ru/`. The URL determines the language and takes priority over browser preferences. On a root visit, the client selects the saved `support-assistant.locale` preference, then Russian for a Russian browser language, or English otherwise. Without JavaScript, the root provides links to both languages. Switching works even when browser storage is unavailable. Vue Router preserves the workflow component across language changes and browser history navigation.
+
+Switching language preserves entered text, the confirmed department, and generated results. Loading an example or template uses the current language. Department names/descriptions and LLM results retain the content supplied by the backend; the interface preference does not change the API or request a particular generation language.
+
+## Static rendering and SEO
+
+`npm run build` builds browser assets and a temporary server bundle, then `scripts/build.mjs` renders the initial Vue interface into `dist/en/index.html` and `dist/ru/index.html`. It also writes the language chooser, `sitemap.xml` and `robots.txt`. This rendering makes no backend or OpenRouter calls and contains no user input. The runtime remains static Nginx; no Node server is required. Vue hydrates the localized HTML and fetches departments after mounting.
+
+Each language has its own title, description and canonical URL, plus reciprocal `hreflang` links for English, Russian and `x-default`. The confirmed public origin is `https://support.danil-miftakhov.dev`; this is a build contract, not evidence that DNS/TLS or deployment is configured. `VITE_SITE_ORIGIN` overrides it at build time and must be an HTTPS origin without a path, query or credentials. HTTP localhost origins are allowed for local preview:
+
+```bash
+VITE_SITE_ORIGIN=http://localhost:8080 npm run build
+```
+
+Compose forwards the same variable as a frontend build argument. The release workflow reads the public repository variable `VITE_SITE_ORIGIN`, falling back to the confirmed origin. Changing it requires rebuilding the image. It is not a backend runtime setting.
+
+Production Nginx serves actual files, normalizes `/en` and `/ru` to trailing-slash URLs, and returns HTTP 404 for unknown paths. API proxying is unchanged. The build includes checks of the generated HTML and sitemap; component tests cover URL precedence, preserved form state, metadata updates and hydration.
 
 ## Local development
 

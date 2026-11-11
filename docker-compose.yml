@@ -69,6 +69,8 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_SITE_ORIGIN: ${VITE_SITE_ORIGIN:-https://support.danil-miftakhov.dev}
     ports:
       - "127.0.0.1:8080:80"
     depends_on:

@@ -45,7 +45,7 @@ describe('ticket API client', () => {
     );
   });
 
-  it('surfaces API detail messages and fallback HTTP errors', async () => {
+  it('normalizes JSON and non-JSON failures without exposing backend details', async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce(
@@ -57,7 +57,10 @@ describe('ticket API client', () => {
       .mockResolvedValueOnce(new Response('bad gateway', { status: 502 }));
     vi.stubGlobal('fetch', fetchMock);
 
-    await expect(getDepartments()).rejects.toThrow('OpenRouter unavailable.');
+    await expect(getDepartments()).rejects.toMatchObject({
+      name: 'ApiError',
+      status: 502,
+    });
     await expect(getDepartments()).rejects.toThrow('API request failed: HTTP 502');
   });
 });
