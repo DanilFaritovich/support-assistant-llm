@@ -1,7 +1,8 @@
 # Guest workspace roadmap and session handoff
 
-Status: implemented and locally validated on `feature/guest-workspaces`.
-Git delivery and GitHub CI are the remaining steps; see the delivery section below.
+Status: implemented, locally validated, committed, and pushed on
+`feature/guest-workspaces`. [PR #10](https://github.com/DanilFaritovich/support-assistant-llm/pull/10)
+targets `develop`; GitHub CI is running. Review and merge remain with the developer.
 This file is the continuation point if the current session ends.
 
 ## Agreed scope and implemented behavior
@@ -78,7 +79,13 @@ The implementation checklist is complete:
 ## Git delivery and next action
 
 - Branch: `feature/guest-workspaces`, based on `develop`.
-- Review completed; commit/push and PR to `develop` are next.
+- Feature commit: `cf8831b` (`feat: add private guest workspaces and settings transfer`).
+- Branch is pushed to `origin/feature/guest-workspaces`.
+- [PR #10](https://github.com/DanilFaritovich/support-assistant-llm/pull/10) is open
+  against `develop`; CI was in progress at handoff.
+- Next action: inspect current PR checks. Fix a failure if one appears; otherwise
+  the implementation is ready for developer review. Do not redo successful local
+  checks unless code changes or a failure gives a reason.
 - Do not merge without a separate user request.
 - Do not stage the unrelated pre-existing untracked root `package.json` and
   `package-lock.json`.
