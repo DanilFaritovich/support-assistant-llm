@@ -22,6 +22,10 @@ class Settings(BaseSettings):
         description="Database connection URL.",
     )
 
+    guest_workspace_ttl_days: int = Field(default=90, ge=1, le=365)
+    guest_workspace_max_count: int = Field(default=5000, ge=1)
+    guest_cookie_secure: bool = Field(default=True)
+
     openrouter_api_key: SecretStr | None = Field(
         default=None,
         description="OpenRouter API key used only by the backend.",

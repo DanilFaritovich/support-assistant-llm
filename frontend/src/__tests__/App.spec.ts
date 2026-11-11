@@ -7,6 +7,9 @@ import { Root } from '../app';
 import { createSupportRouter } from '../router';
 import { ApiError, getDepartments, processTicket, routeTicket } from '../api/tickets';
 import { DEMO_TEMPLATES, DEMO_TICKETS_BY_LOCALE } from '../demo';
+import { getWorkspace } from '../api/workspace';
+import { demoWorkspace } from './fixtures/workspace';
+import WorkspaceManager from '../components/WorkspaceManager.vue';
 import { LOCALE_STORAGE_KEY } from '../locale';
 import type { Department } from '../types/ticket';
 
@@ -27,6 +30,8 @@ vi.mock('../api/tickets', async (importOriginal) => ({
   routeTicket: vi.fn(),
   processTicket: vi.fn(),
 }));
+
+vi.mock('../api/workspace', () => ({ getWorkspace: vi.fn() }));
 
 const departments: Department[] = [
   { id: 101, name: 'Workplace & Devices', description: 'Device support.' },
@@ -57,6 +62,7 @@ describe('App', () => {
     localStorage.clear();
     localStorage.setItem(LOCALE_STORAGE_KEY, 'ru');
     vi.mocked(getDepartments).mockResolvedValue(departments);
+    vi.mocked(getWorkspace).mockResolvedValue(demoWorkspace());
     vi.mocked(routeTicket).mockResolvedValue(routingResponse);
     vi.mocked(processTicket).mockResolvedValue(processingResponse);
   });
@@ -65,10 +71,10 @@ describe('App', () => {
     const { wrapper } = await mountApp();
     await flushPromises();
 
-    await wrapper.find('#demo-ticket').setValue(DEMO_TICKETS[1]?.id);
+    await wrapper.find('#demo-ticket').setValue(`ru-${DEMO_TICKETS[1]?.id}`);
     await wrapper.get('.demo-toolbar .secondary-button').trigger('click');
 
-    expect(getDepartments).toHaveBeenCalledExactlyOnceWith();
+    expect(getWorkspace).toHaveBeenCalledExactlyOnceWith();
     expect((wrapper.get('#ticket-text').element as HTMLTextAreaElement).value).toBe(
       DEMO_TICKETS[1]?.ticketText,
     );
@@ -190,6 +196,7 @@ describe('language switching', () => {
     vi.resetAllMocks();
     localStorage.clear();
     vi.mocked(getDepartments).mockResolvedValue(departments);
+    vi.mocked(getWorkspace).mockResolvedValue(demoWorkspace());
   });
   afterEach(() => {
     localStorage.clear();
@@ -290,6 +297,88 @@ describe('language switching', () => {
     await wrapper.get('a[lang="ru"]').trigger('click');
     await flushPromises();
     expect(wrapper.get('h1').text()).toBe('Обработка IT-заявок');
+    wrapper.unmount();
+  });
+});
+
+describe('personal workspace workflow', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+    localStorage.clear();
+    vi.mocked(routeTicket).mockResolvedValue(routingResponse);
+    vi.mocked(processTicket).mockResolvedValue(processingResponse);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  it('loads custom examples and default templates from the saved space', async () => {
+    const state = demoWorkspace();
+    state.personalized = true;
+    state.revision = 3;
+    state.data.examples.push({
+      id: 'custom',
+      name: 'My example',
+      text: 'My fictional request',
+      locale: null,
+    });
+    state.data.templates.push({
+      id: 'custom-template',
+      name: 'My template',
+      text: 'Custom summary:',
+      locale: null,
+    });
+    state.data.default_template_id = 'custom-template';
+    vi.mocked(getWorkspace).mockResolvedValue(state);
+    const { wrapper } = await mountApp('/en/');
+    await flushPromises();
+    await wrapper.get('#demo-ticket').setValue('custom');
+    await wrapper.get('.demo-toolbar .secondary-button').trigger('click');
+    expect((wrapper.get('#ticket-text').element as HTMLTextAreaElement).value).toBe(
+      'My fictional request',
+    );
+    await wrapper.get('#route-form').trigger('submit');
+    await flushPromises();
+    await wrapper.get('#confirm-department').trigger('click');
+    expect(
+      (wrapper.get('#description-template').element as HTMLTextAreaElement).value,
+    ).toBe('Custom summary:');
+    await wrapper.get('#saved-template').setValue('en-default');
+    await wrapper.get('#load-saved-template').trigger('click');
+    expect(
+      (wrapper.get('#description-template').element as HTMLTextAreaElement).value,
+    ).toBe(DEMO_TEMPLATES.en);
+    wrapper.unmount();
+  });
+
+  it('invalidates completed routing when saved departments change', async () => {
+    vi.mocked(getWorkspace).mockResolvedValue(demoWorkspace());
+    const { wrapper } = await mountApp('/en/');
+    await flushPromises();
+    await route(wrapper);
+    await wrapper.get('#confirm-department').trigger('click');
+    const changed = demoWorkspace();
+    changed.data.departments = [{ id: 501, name: 'New department', description: '' }];
+    wrapper.findComponent(WorkspaceManager).vm.$emit('saved', changed);
+    await flushPromises();
+    expect(wrapper.find('#draft-form').exists()).toBe(false);
+    expect(wrapper.find('#confirm-department').exists()).toBe(false);
+    expect(wrapper.text()).toContain('New department');
+    wrapper.unmount();
+  });
+
+  it('retries failed workspace loads without discarding the entered ticket', async () => {
+    vi.mocked(getWorkspace)
+      .mockRejectedValueOnce(new TypeError('network'))
+      .mockResolvedValueOnce(demoWorkspace());
+    const { wrapper } = await mountApp('/en/');
+    await flushPromises();
+    await wrapper.get('#ticket-text').setValue('Keep this text');
+    expect(wrapper.get('[role="alert"]').text()).toContain('Unable to reach');
+    await wrapper.get('.right-column > .text-button').trigger('click');
+    await flushPromises();
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+    expect((wrapper.get('#ticket-text').element as HTMLTextAreaElement).value).toBe(
+      'Keep this text',
+    );
     wrapper.unmount();
   });
 });

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.api.middleware import RequestContextMiddleware
 from app.api.routes import router
+from app.api.workspace import router as workspace_router
 from app.connectors.llm_client import create_llm_client
 from app.connectors.openrouter_ticket_drafting_connector import TicketDraftingError
 from app.connectors.openrouter_ticket_routing_connector import TicketRoutingError
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Initialize and release shared application resources."""
-    engine = create_async_engine(settings.database_url)
+    engine = create_async_engine(settings.database_url, hide_parameters=True)
 
     async with AsyncExitStack() as stack:
         stack.push_async_callback(engine.dispose)
@@ -204,6 +205,7 @@ def create_app(llm_quota_override: LLMQuotaPort | None = None) -> FastAPI:
 
     app.add_middleware(RequestContextMiddleware)
     app.include_router(router)
+    app.include_router(workspace_router)
 
     app.add_exception_handler(
         TicketRoutingError,

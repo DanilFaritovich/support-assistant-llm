@@ -38,6 +38,10 @@ initial installation, and load only changed or newly applicable skills.
 
 Main entry points are `backend/app/main.py`, `backend/app/composition.py`,
 `frontend/src/main.ts`, and `frontend/src/App.vue`.
+Guest workspace routes live in `backend/app/api/workspace.py`; settings use a
+bounded JSON aggregate in SQLite and the editor is
+`frontend/src/components/WorkspaceManager.vue`. Current handoff and remaining
+work are recorded in `docs/roadmap.md`.
 
 Dependency direction is HTTP/UI and infrastructure -> application services ->
 ports/domain contracts. Services must not depend on FastAPI, SQLAlchemy, or

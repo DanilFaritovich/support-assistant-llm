@@ -36,6 +36,8 @@ class RequestContextMiddleware:
                 status_code = int(message["status"])
                 headers = list(message.get("headers", []))
                 headers.append((b"x-request-id", request_id.encode("ascii")))
+                if scope["path"].startswith("/api/"):
+                    headers.append((b"cache-control", b"private, no-store"))
                 message["headers"] = headers
             await send(message)
 

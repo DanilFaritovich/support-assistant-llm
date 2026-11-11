@@ -7,21 +7,29 @@ from app.connectors.openrouter_ticket_drafting_connector import (
 from app.connectors.openrouter_ticket_routing_connector import (
     OpenRouterTicketRoutingConnector,
 )
+from app.ports.department_port import DepartmentRepository
 from app.ports.llm_quota_port import LLMQuotaPort
 from app.repositories.sqlalchemy_department_repository import (
     SqlAlchemyDepartmentRepository,
 )
+from app.schemas.workspace import WorkspaceData
 from app.services.department_service import DepartmentService
 from app.services.ticket_drafting_service import TicketDraftingService
 from app.services.ticket_processing_service import TicketProcessingService
 from app.services.ticket_routing_service import TicketRoutingService
+from app.services.workspace_service import WorkspaceDepartmentRepository
 
 
 def create_department_service(
     session: AsyncSession,
+    workspace_data: WorkspaceData | None = None,
 ) -> DepartmentService:
     """Create a department service for the provided database session."""
-    repository = SqlAlchemyDepartmentRepository(session)
+    repository: DepartmentRepository = (
+        WorkspaceDepartmentRepository(workspace_data)
+        if workspace_data is not None
+        else SqlAlchemyDepartmentRepository(session)
+    )
 
     return DepartmentService(
         department_repository=repository,
@@ -50,9 +58,10 @@ def create_ticket_processing_service(
     llm_client: AsyncOpenAI,
     llm_models: list[str],
     llm_quota: LLMQuotaPort,
+    workspace_data: WorkspaceData | None = None,
 ) -> TicketProcessingService:
     """Create a service for generating a ticket description."""
-    department_service = create_department_service(session)
+    department_service = create_department_service(session, workspace_data)
 
     drafting_connector = OpenRouterTicketDraftingConnector(
         client=llm_client,

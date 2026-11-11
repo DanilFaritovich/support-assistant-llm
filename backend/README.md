@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The backend exposes the support-ticket API, owns the OpenRouter credential, validates model output, persists the IT-department directory, and generates descriptions using the user's final department selection.
+The backend exposes the support-ticket API, owns the OpenRouter credential, validates model output, persists the demo directory and private guest settings, and generates descriptions using the user's final department selection.
 
 ## Architecture
 
@@ -29,13 +29,14 @@ app/
 ├── db/              # SQLAlchemy base, models, sessions, idempotent demo seed
 ├── ports/           # repository, routing, and drafting protocols
 ├── prompts/         # loading of repository-owned generic prompts
-├── repositories/    # SQLAlchemy department adapter
+├── repositories/    # SQLAlchemy department and workspace adapters
 ├── schemas/         # domain and LLM result models
 ├── services/        # routing, drafting, department, and processing use cases
 ├── composition.py   # dependency construction
 └── main.py          # application lifecycle and safe exception mapping
 resources/
 ├── departments.json
+├── workspace.json    # localized default examples and templates
 └── prompts/
 migrations/          # Alembic environment and initial schema
 tests/               # unit, integration, and in-process API tests
@@ -44,7 +45,7 @@ tests/               # unit, integration, and in-process API tests
 ## Business flow
 
 1. `GET /api/departments` returns the available directory.
-2. `POST /api/tickets/route` loads all departments and asks the routing port for a title, department ID, and rationale.
+2. `POST /api/tickets/route` loads the current workspace departments and asks the routing port for a title, department ID, and rationale.
 3. The route rejects IDs not present in the supplied directory.
 4. The browser confirms or changes the ID locally.
 5. `POST /api/tickets/process` looks up the submitted final ID and passes the actual department record to the drafting port.
@@ -59,7 +60,46 @@ Returns `{"status":"ok"}` for container and proxy healthchecks.
 
 ### `GET /api/departments`
 
-Returns an ordered list of `{id, name, description}` records.
+Returns `{id, name, description}` records from the cookie-selected workspace, or the public directory before personalization.
+
+### Guest workspace API
+
+- `GET /api/workspace`: `{data, revision, personalized, retention_days}`. Public
+  reads return demo defaults with revision 0 and do not create records.
+- `GET /api/workspace/defaults`: the current public defaults for explicit restore.
+- `PUT /api/workspace`: `{data, revision}` with `X-Workspace-Request: 1`.
+  Creates on revision 0, otherwise atomically compares the stored revision.
+  HTTP 409 means a conflict, expiration, or exhausted global capacity.
+
+`data` contains `format_version: 1`, `departments`, `examples`, `templates`, and
+`default_template_id`. Examples/templates contain string `id`, `name`, `text`,
+and optional `locale` (`en`, `ru`, or null for both). Department IDs are positive
+integers scoped to the document. IDs must be unique within each collection;
+department names must be unique ignoring case. Import uses the same validated
+save endpoint and never accepts a workspace identifier from the request body.
+
+The limits are 20 departments, 20 examples, 10 templates, and 15,000 UTF-8 bytes
+for the complete document. At least one department and one template are required.
+Names are limited to 100 characters, department descriptions to 1,000, examples
+to 4,000, and templates to 2,000. The default template must reference an existing
+item or be null for the first template matching the interface language (falling
+back to the first available template).
+
+The server generates a 256-bit random token and stores only its SHA-256 hash.
+`support_guest` is an HttpOnly, SameSite=Lax cookie scoped to `/api`, with Secure
+on by default. Use `GUEST_COOKIE_SECURE=false` only for local HTTP development;
+the development Compose file already sets it. Settings expire after
+`GUEST_WORKSPACE_TTL_DAYS` (default 90) from the last save. Writes delete expired
+rows and enforce `GUEST_WORKSPACE_MAX_COUNT` (default 5,000) atomically at insert.
+Expired rows may remain physically stored until the next write; reads reject them.
+
+SQLAlchemy engine configuration hides bound parameters in SQL errors so saved
+settings are not included in database exception logs.
+
+Settings writes require a custom header and reject cross-site Fetch Metadata;
+CORS stays disabled. All `/api/` responses are private/no-store. Both LLM use
+cases resolve departments exclusively within the cookie-selected document.
+Redis quota identity remains the trusted client IP, independent of guest tokens.
 
 ### `POST /api/tickets/route`
 
@@ -99,6 +139,8 @@ FastAPI also generates OpenAPI at `/openapi.json` and Swagger UI at `/docs`.
 ## Database and migrations
 
 The default non-container database is `backend/data/app.db`. Docker Compose overrides it with `/app/data/app.db` on a named volume. Compose runs `alembic upgrade head` as an explicit one-shot migration service before Uvicorn starts; the backend image itself starts only the application server.
+
+The guest-workspace migration adds an indexed expiration column and a revisioned JSON settings document in `guest_workspaces`. The workspace adapter owns one atomic save transaction; it never commits unrelated application operations. Existing SQLite backup/restore procedures include these settings.
 
 The initial migration creates the unique department table from `resources/departments.json`. On every startup, `seed_demo_departments` adds only names that do not already exist. Existing records are never overwritten, and repeated startup creates no duplicates.
 

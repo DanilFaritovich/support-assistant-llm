@@ -2,6 +2,40 @@ export type Locale = 'en' | 'ru';
 
 export const messages = {
   en: {
+    workspaceTitle: 'Your workspace',
+    workspaceHelp:
+      'Save your departments, example tickets, and templates without signing in. Settings belong to this browser.',
+    workspaceRetention:
+      'Stored for {days} days after saving. Clearing cookies removes access. Export settings to transfer or restore them.',
+    workspaceManage: 'Manage workspace',
+    workspaceConflict:
+      'Settings changed in another tab, expired, or storage is full. Copy your unsaved edits, then reload before saving.',
+    workspaceTooLarge: 'Settings exceed 15,000 bytes. Shorten texts or remove items.',
+    itemName: 'Name',
+    itemDescription: 'Description',
+    itemLanguage: 'Show for language',
+    allLanguages: 'Both languages',
+    remove: 'Remove',
+    addDepartment: 'Add department',
+    savedExamples: 'Saved examples',
+    savedTemplates: 'Saved templates',
+    addExample: 'Add example',
+    addTemplate: 'Add template',
+    defaultTemplate: 'Default template',
+    localeDefaultTemplate: 'First template for the interface language',
+    saving: 'Saving…',
+    saveWorkspace: 'Save workspace',
+    cancel: 'Cancel',
+    exportWorkspace: 'Export saved settings',
+    importWorkspace: 'Import settings (JSON, up to 16 KiB)',
+    restoreWorkspace: 'Restore demo settings',
+    reloadWorkspace: 'Reload saved settings (discard edits)',
+    replaceWorkspace:
+      'Replace all workspace settings? Unsaved edits will be discarded.',
+    invalidImport:
+      'Unable to read the settings file. Use a workspace JSON export up to 16 KiB.',
+    workspaceSaved: 'Workspace saved.',
+    loadSavedTemplate: 'Use selected template',
     title: 'IT ticket processing',
     seoDescription:
       'Turn IT support requests into structured tickets with AI-assisted department routing, human review and editable description templates.',
@@ -43,7 +77,7 @@ export const messages = {
     process: 'Generate description',
     resultTitle: 'Generated description',
     resultHelp: 'Result based on the confirmed department.',
-    departmentsTitle: 'Demo departments',
+    departmentsTitle: 'IT departments',
     departmentsHelp: 'Directory available for manual selection.',
     available: 'available',
     loading: 'Loading…',
@@ -64,6 +98,41 @@ export const messages = {
     language: 'Interface language',
   },
   ru: {
+    workspaceTitle: 'Ваше пространство',
+    workspaceHelp:
+      'Сохраняйте отделы, примеры заявок и шаблоны без регистрации. Настройки доступны в этом браузере.',
+    workspaceRetention:
+      'Хранятся {days} дней после сохранения. При удалении cookie доступ теряется. Экспортируйте настройки для переноса или восстановления.',
+    workspaceManage: 'Настроить пространство',
+    workspaceConflict:
+      'Настройки изменились в другой вкладке, истекли или хранилище заполнено. Скопируйте изменения и загрузите сохранённые настройки заново.',
+    workspaceTooLarge:
+      'Размер настроек превышает 15 000 байт. Сократите тексты или удалите элементы.',
+    itemName: 'Название',
+    itemDescription: 'Описание',
+    itemLanguage: 'Показывать для языка',
+    allLanguages: 'Обоих языков',
+    remove: 'Удалить',
+    addDepartment: 'Добавить отдел',
+    savedExamples: 'Сохранённые примеры',
+    savedTemplates: 'Сохранённые шаблоны',
+    addExample: 'Добавить пример',
+    addTemplate: 'Добавить шаблон',
+    defaultTemplate: 'Шаблон по умолчанию',
+    localeDefaultTemplate: 'Первый шаблон для языка интерфейса',
+    saving: 'Сохраняем…',
+    saveWorkspace: 'Сохранить пространство',
+    cancel: 'Отмена',
+    exportWorkspace: 'Экспорт сохранённых настроек',
+    importWorkspace: 'Импорт настроек (JSON, до 16 КиБ)',
+    restoreWorkspace: 'Восстановить демо-настройки',
+    reloadWorkspace: 'Загрузить сохранённые настройки (отменить правки)',
+    replaceWorkspace:
+      'Заменить все настройки пространства? Несохранённые правки будут потеряны.',
+    invalidImport:
+      'Не удалось прочитать файл настроек. Используйте JSON-экспорт пространства размером до 16 КиБ.',
+    workspaceSaved: 'Пространство сохранено.',
+    loadSavedTemplate: 'Использовать выбранный шаблон',
     title: 'Обработка IT-заявок',
     seoDescription:
       'Превратите обращение в структурированную IT-заявку: выбор департамента с помощью ИИ, проверка пользователем и описание по редактируемому шаблону.',
@@ -105,7 +174,7 @@ export const messages = {
     process: 'Сгенерировать описание',
     resultTitle: 'Готовое описание',
     resultHelp: 'Результат с учётом итогового департамента.',
-    departmentsTitle: 'Демонстрационные департаменты',
+    departmentsTitle: 'IT-департаменты',
     departmentsHelp: 'Справочник, доступный для ручного выбора.',
     available: 'доступно',
     loading: 'Загрузка…',

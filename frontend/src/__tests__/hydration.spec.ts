@@ -3,11 +3,16 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { createMemoryHistory } from 'vue-router';
 
 import { createApplication } from '../app';
+import { demoWorkspace } from './fixtures/workspace';
 import { render } from '../entry-server';
 
 vi.mock('../api/tickets', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/tickets')>()),
   getDepartments: vi.fn().mockResolvedValue([]),
+}));
+
+vi.mock('../api/workspace', () => ({
+  getWorkspace: vi.fn().mockImplementation(async () => demoWorkspace()),
 }));
 
 afterEach(() => {

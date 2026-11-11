@@ -9,6 +9,7 @@ from app.core.config import settings
 engine = create_async_engine(
     url=settings.database_url,
     echo=False,
+    hide_parameters=True,
 )
 
 
